@@ -10,10 +10,10 @@ import { Timestamp } from 'firebase/firestore';
 
 interface FileListProps {
   files: SharedFile[];
-  onDelete: (fileId: string, fileName: string) => void;
+  onDelete: (fileId: string, storagePath: string) => void;
 }
 
-function FileListItem({ file, onDelete }: { file: SharedFile; onDelete: (fileId: string, fileName: string) => void; }) {
+function FileListItem({ file, onDelete }: { file: SharedFile; onDelete: (fileId: string, storagePath: string) => void; }) {
   const [timeLeft, setTimeLeft] = useState('');
 
   useEffect(() => {
@@ -67,7 +67,7 @@ function FileListItem({ file, onDelete }: { file: SharedFile; onDelete: (fileId:
             <Download className="w-5 h-5" />
           </a>
         </Button>
-        <Button variant="ghost" size="icon" onClick={() => onDelete(file.id, file.name)} className="w-9 h-9 hover:bg-destructive/10 hover:text-destructive">
+        <Button variant="ghost" size="icon" onClick={() => onDelete(file.id, file.storagePath)} className="w-9 h-9 hover:bg-destructive/10 hover:text-destructive">
           <Trash2 className="w-5 h-5" />
         </Button>
       </div>
