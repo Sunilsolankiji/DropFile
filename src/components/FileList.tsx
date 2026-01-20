@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Card, Button, ListGroup } from 'react-bootstrap';
-import { FileText, Download, Trash2, Clock, Inbox, Monitor, Cloud } from 'lucide-react';
+import { Card, Button } from 'react-bootstrap';
+import { FileText, Download, Trash2, Clock, Inbox, Monitor, Cloud, File, Image, Music, Video, FileArchive, FileCode } from 'lucide-react';
 import { formatFileSize } from '@/lib/utils';
 import type { SharedFile } from '@/hooks/use-room';
 import { Timestamp } from 'firebase/firestore';
@@ -9,6 +9,17 @@ interface FileListProps {
   files: SharedFile[];
   onDelete: (fileId: string, storagePath: string) => void;
   onDownload?: (fileId: string) => Promise<string | null>;
+}
+
+// Get icon based on file type
+function getFileIcon(type: string) {
+  if (type.startsWith('image/')) return Image;
+  if (type.startsWith('video/')) return Video;
+  if (type.startsWith('audio/')) return Music;
+  if (type.includes('zip') || type.includes('rar') || type.includes('tar') || type.includes('gz')) return FileArchive;
+  if (type.includes('javascript') || type.includes('typescript') || type.includes('html') || type.includes('css') || type.includes('json')) return FileCode;
+  if (type.includes('pdf') || type.includes('document') || type.includes('text')) return FileText;
+  return File;
 }
 
 function FileListItem({
@@ -80,27 +91,31 @@ function FileListItem({
     }
   };
 
+  const FileIcon = getFileIcon(file.type);
+
   return (
-    <ListGroup.Item className="file-item d-flex align-items-center">
-      <FileText size={32} className="text-primary me-3 flex-shrink-0" />
+    <div className="file-item d-flex align-items-center">
+      <div className="file-icon me-3">
+        <FileIcon size={24} style={{ width: 24, height: 24 }} />
+      </div>
       <div className="flex-grow-1 overflow-hidden me-3">
-        <div className="d-flex align-items-center gap-2">
-          <span className="fw-medium text-truncate" title={file.name}>{file.name}</span>
+        <div className="d-flex align-items-center gap-2 mb-1">
+          <span className="file-name text-truncate" title={file.name}>{file.name}</span>
           {file.isLocal ? (
-            <span title="Local file">
-              <Monitor size={12} className="status-local" />
+            <span title="Local file" className="badge bg-success bg-opacity-10 text-success d-inline-flex align-items-center gap-1 px-2 py-1" style={{ fontSize: '0.7rem' }}>
+              <Monitor size={10} style={{ width: 10, height: 10 }} /> Local
             </span>
           ) : (
-            <span title="Cloud file">
-              <Cloud size={12} className="status-cloud" />
+            <span title="Cloud file" className="badge bg-primary bg-opacity-10 text-primary d-inline-flex align-items-center gap-1 px-2 py-1" style={{ fontSize: '0.7rem' }}>
+              <Cloud size={10} style={{ width: 10, height: 10 }} /> Cloud
             </span>
           )}
         </div>
-        <small className="text-muted">{formatFileSize(file.size)}</small>
+        <span className="file-size">{formatFileSize(file.size)}</span>
       </div>
       <div className="d-flex align-items-center gap-2">
-        <span className={`time-badge d-flex align-items-center gap-1 ${timeLeft === 'Expired' ? 'expired' : 'text-muted'}`}>
-          <Clock size={14} />
+        <span className={`time-badge d-flex align-items-center gap-1 ${timeLeft === 'Expired' ? 'expired' : ''}`}>
+          <Clock size={14} style={{ width: 14, height: 14 }} />
           {timeLeft}
         </span>
         <Button
@@ -108,18 +123,22 @@ function FileListItem({
           size="sm"
           onClick={handleDownload}
           disabled={isDownloading}
+          className="d-flex align-items-center justify-content-center"
+          style={{ width: '36px', height: '36px', padding: 0 }}
         >
-          <Download size={16} />
+          <Download size={16} style={{ width: 16, height: 16 }} className={isDownloading ? 'pulse-animation' : ''} />
         </Button>
         <Button
           variant="outline-danger"
           size="sm"
           onClick={() => onDelete(file.id, file.storagePath)}
+          className="d-flex align-items-center justify-content-center"
+          style={{ width: '36px', height: '36px', padding: 0 }}
         >
           <Trash2 size={16} />
         </Button>
       </div>
-    </ListGroup.Item>
+    </div>
   );
 }
 
@@ -127,10 +146,12 @@ export default function FileList({ files, onDelete, onDownload }: FileListProps)
   if (files.length === 0) {
     return (
       <Card>
-        <Card.Body className="text-center py-5">
-          <Inbox size={64} className="text-muted mb-3" />
-          <h5>Empty Room</h5>
-          <p className="text-muted mb-0">Upload some files to get started!</p>
+        <Card.Body className="empty-state">
+          <div className="empty-state-icon">
+            <Inbox size={48} />
+          </div>
+          <h5>No files yet</h5>
+          <p className="mb-0">Upload some files to get started sharing!</p>
         </Card.Body>
       </Card>
     );
@@ -138,11 +159,11 @@ export default function FileList({ files, onDelete, onDownload }: FileListProps)
 
   return (
     <Card>
-      <ListGroup variant="flush">
+      <Card.Body className="p-3">
         {files.map(file => (
           <FileListItem key={file.id} file={file} onDelete={onDelete} onDownload={onDownload} />
         ))}
-      </ListGroup>
+      </Card.Body>
     </Card>
   );
 }

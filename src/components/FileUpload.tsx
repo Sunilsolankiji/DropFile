@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UploadCloud } from 'lucide-react';
+import { UploadCloud, FileUp } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 type FileUploadProps = {
@@ -85,14 +85,30 @@ export default function FileUpload({ onUpload }: FileUploadProps) {
         className="d-none"
         onChange={handleFileSelect}
       />
-      <label htmlFor="file-upload-input" className="d-flex flex-column align-items-center justify-content-center w-100 h-100" style={{ cursor: 'pointer' }}>
-        <UploadCloud
-          size={64}
-          className={`mb-3 ${isDragging ? 'text-primary' : 'text-muted'}`}
-        />
-        <h5 className="mb-1">Drag & drop files here</h5>
-        <p className="text-muted mb-0">or click to browse</p>
-        <small className="text-muted mt-3">Max {MAX_FILE_SIZE_MB}MB per file</small>
+      <label
+        htmlFor="file-upload-input"
+        className="d-flex flex-column align-items-center justify-content-center w-100 h-100 m-0"
+        style={{ cursor: 'pointer' }}
+      >
+        <div className={`dropzone-icon ${isDragging ? 'pulse-animation' : ''}`}>
+          {isDragging ? <FileUp size={36} style={{ width: 36, height: 36 }} /> : <UploadCloud size={36} style={{ width: 36, height: 36 }} />}
+        </div>
+        <h5 className="fw-bold mb-2">
+          {isDragging ? 'Drop files here!' : 'Drag & drop files here'}
+        </h5>
+        <p className="text-muted mb-3">or click to browse from your device</p>
+        <div className="d-flex gap-3 text-muted small">
+          <span className="d-flex align-items-center gap-1">
+            <span className="badge bg-secondary bg-opacity-10 text-secondary">
+              Max {MAX_FILE_SIZE_MB}MB
+            </span>
+          </span>
+          <span className="d-flex align-items-center gap-1">
+            <span className="badge bg-secondary bg-opacity-10 text-secondary">
+              Up to {MAX_FILES} files
+            </span>
+          </span>
+        </div>
       </label>
     </div>
   );
