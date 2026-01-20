@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { File as FileIcon, Download, Trash2, Clock, Inbox, Monitor, Cloud } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { formatFileSize, cn } from '@/lib/utils';
+import { Card, Button, ListGroup } from 'react-bootstrap';
+import { FileText, Download, Trash2, Clock, Inbox, Monitor, Cloud } from 'lucide-react';
+import { formatFileSize } from '@/lib/utils';
 import type { SharedFile } from '@/hooks/use-room';
 import { Timestamp } from 'firebase/firestore';
 
@@ -28,10 +27,9 @@ function FileListItem({
     const calculateTimeLeft = () => {
       const now = Date.now();
       if (!file.expiresAt) {
-          setTimeLeft('N/A');
-          return null;
+        setTimeLeft('N/A');
+        return null;
       }
-      // firebase.firestore.Timestamp has toDate(), but we might get a plain object from server.
       const expiryTime = (file.expiresAt instanceof Timestamp)
         ? file.expiresAt.toMillis()
         : new Date((file.expiresAt as { seconds: number }).seconds * 1000).getTime();
@@ -52,9 +50,9 @@ function FileListItem({
     if (initialDistance === null) return;
 
     const interval = setInterval(() => {
-        if (calculateTimeLeft() === null) {
-            clearInterval(interval);
-        }
+      if (calculateTimeLeft() === null) {
+        clearInterval(interval);
+      }
     }, 1000);
 
     return () => clearInterval(interval);
@@ -83,67 +81,68 @@ function FileListItem({
   };
 
   return (
-    <div className="flex items-center p-3 hover:bg-secondary/50 rounded-md transition-colors">
-      <FileIcon className="w-8 h-8 mr-4 text-primary" />
-      <div className="flex-grow overflow-hidden">
-        <div className="flex items-center gap-2">
-          <p className="font-medium truncate" title={file.name}>{file.name}</p>
+    <ListGroup.Item className="file-item d-flex align-items-center">
+      <FileText size={32} className="text-primary me-3 flex-shrink-0" />
+      <div className="flex-grow-1 overflow-hidden me-3">
+        <div className="d-flex align-items-center gap-2">
+          <span className="fw-medium text-truncate" title={file.name}>{file.name}</span>
           {file.isLocal ? (
             <span title="Local file">
-              <Monitor className="w-3 h-3 text-green-500 flex-shrink-0" />
+              <Monitor size={12} className="status-local" />
             </span>
           ) : (
             <span title="Cloud file">
-              <Cloud className="w-3 h-3 text-blue-500 flex-shrink-0" />
+              <Cloud size={12} className="status-cloud" />
             </span>
           )}
         </div>
-        <p className="text-sm text-muted-foreground">{formatFileSize(file.size)}</p>
+        <small className="text-muted">{formatFileSize(file.size)}</small>
       </div>
-      <div className="flex items-center gap-2 md:gap-4 ml-4">
-        <div className={cn("flex items-center gap-1 text-sm tabular-nums", timeLeft === 'Expired' ? 'text-destructive' : 'text-muted-foreground')}>
-          <Clock className="w-4 h-4" />
-          <span>{timeLeft}</span>
-        </div>
+      <div className="d-flex align-items-center gap-2">
+        <span className={`time-badge d-flex align-items-center gap-1 ${timeLeft === 'Expired' ? 'expired' : 'text-muted'}`}>
+          <Clock size={14} />
+          {timeLeft}
+        </span>
         <Button
-          variant="ghost"
-          size="icon"
-          className="w-9 h-9"
+          variant="outline-secondary"
+          size="sm"
           onClick={handleDownload}
           disabled={isDownloading}
         >
-          <Download className={cn("w-5 h-5", isDownloading && "animate-pulse")} />
+          <Download size={16} />
         </Button>
-        <Button variant="ghost" size="icon" onClick={() => onDelete(file.id, file.storagePath)} className="w-9 h-9 hover:bg-destructive/10 hover:text-destructive">
-          <Trash2 className="w-5 h-5" />
+        <Button
+          variant="outline-danger"
+          size="sm"
+          onClick={() => onDelete(file.id, file.storagePath)}
+        >
+          <Trash2 size={16} />
         </Button>
       </div>
-    </div>
+    </ListGroup.Item>
   );
 }
 
 export default function FileList({ files, onDelete, onDownload }: FileListProps) {
   if (files.length === 0) {
     return (
-      <Card className="border-none shadow-none">
-        <CardContent className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground">
-          <Inbox className="w-16 h-16 mb-4" />
-          <h3 className="text-xl font-semibold">Empty Room</h3>
-          <p className="mt-1">Upload some files to get started!</p>
-        </CardContent>
+      <Card>
+        <Card.Body className="text-center py-5">
+          <Inbox size={64} className="text-muted mb-3" />
+          <h5>Empty Room</h5>
+          <p className="text-muted mb-0">Upload some files to get started!</p>
+        </Card.Body>
       </Card>
     );
   }
 
   return (
     <Card>
-      <CardContent className="p-2">
-        <div className="space-y-1">
-          {files.map(file => (
-            <FileListItem key={file.id} file={file} onDelete={onDelete} onDownload={onDownload} />
-          ))}
-        </div>
-      </CardContent>
+      <ListGroup variant="flush">
+        {files.map(file => (
+          <FileListItem key={file.id} file={file} onDelete={onDelete} onDownload={onDownload} />
+        ))}
+      </ListGroup>
     </Card>
   );
 }

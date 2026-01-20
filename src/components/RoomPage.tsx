@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Copy, Users, Home, Loader2, Check, Wifi, WifiOff, Cloud, Monitor } from 'lucide-react';
+import { Container, Row, Col, Card, Button, Spinner, Badge } from 'react-bootstrap';
+import { Copy, Users, Home, Check, Wifi, WifiOff, Cloud, Monitor } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import FileList from '@/components/FileList';
-import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useRoom } from '@/hooks/use-room';
 
@@ -37,7 +37,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
       toast({
         title: "Error",
         description: error,
-        variant: "destructive",
+        variant: "danger",
       });
     }
   }, [error, toast]);
@@ -48,19 +48,20 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
     toast({
       title: 'Copied!',
       description: 'Access code copied to clipboard.',
+      variant: 'success'
     });
     setTimeout(() => setHasCopied(false), 2000);
   };
 
   const getConnectionStatusIcon = () => {
     if (connectionMode === 'local') {
-      return <Monitor className="w-4 h-4 text-green-500" />;
+      return <Monitor size={16} className="status-local" />;
     } else if (connectionMode === 'both') {
-      return <Wifi className="w-4 h-4 text-green-500" />;
+      return <Wifi size={16} className="status-local" />;
     } else if (connectionMode === 'firebase') {
-      return <Cloud className="w-4 h-4 text-blue-500" />;
+      return <Cloud size={16} className="status-cloud" />;
     }
-    return <WifiOff className="w-4 h-4 text-red-500" />;
+    return <WifiOff size={16} className="status-offline" />;
   };
 
   const getConnectionStatusText = () => {
@@ -75,79 +76,88 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      <header className="flex items-center justify-between p-4 border-b">
-        <Link to="/" className="flex items-center gap-2">
-          <Home className="w-6 h-6 text-primary" />
-          <h1 className="text-2xl font-bold text-primary font-headline">DropFile</h1>
-        </Link>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {getConnectionStatusIcon()}
-            <span>{getConnectionStatusText()}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Users className="text-muted-foreground" />
-            <span className="font-semibold text-lg">Room:</span>
-            <div className="flex items-center gap-2 p-2 rounded-md bg-secondary">
-              <span className="font-mono text-xl font-bold text-primary tracking-widest">{roomCode}</span>
-              <Button variant="ghost" size="icon" onClick={handleCopy} className="w-8 h-8">
-                {hasCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex-grow p-4 md:p-6 lg:p-8 overflow-y-auto">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <FileUpload onUpload={uploadFiles} />
-            <div className="mt-8">
-              <h2 className="text-2xl font-semibold mb-4">Shared Files</h2>
-              {loading ? (
-                <div className="flex items-center justify-center p-8">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                  <p className="ml-2 text-muted-foreground">Loading files...</p>
+    <div className="d-flex flex-column min-vh-100">
+      <header className="app-header py-3 px-4">
+        <Container fluid>
+          <div className="d-flex justify-content-between align-items-center">
+            <Link to="/" className="d-flex align-items-center gap-2 text-decoration-none">
+              <Home size={24} className="text-primary" />
+              <h1 className="h4 mb-0 fw-bold text-primary">DropFile</h1>
+            </Link>
+            <div className="d-flex align-items-center gap-3">
+              <div className="d-flex align-items-center gap-2 text-muted small">
+                {getConnectionStatusIcon()}
+                <span>{getConnectionStatusText()}</span>
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <Users size={20} className="text-muted" />
+                <span className="fw-semibold">Room:</span>
+                <div className="d-flex align-items-center gap-2 bg-light px-3 py-2 rounded">
+                  <span className="room-code">{roomCode}</span>
+                  <Button
+                    variant="link"
+                    className="p-0 text-muted"
+                    onClick={handleCopy}
+                  >
+                    {hasCopied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
+                  </Button>
                 </div>
-              ) : (
-                <FileList files={files} onDelete={deleteFile} onDownload={downloadFile} />
-              )}
-            </div>
-          </div>
-
-          <aside className="lg:col-span-1">
-            <div className="bg-card p-6 rounded-lg shadow-sm border sticky top-8">
-              <h3 className="text-lg font-semibold mb-4">Share this Room</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Others can join this room using the access code or by scanning the QR code.
-              </p>
-              {qrCodeUrl && (
-                 <div className="flex justify-center">
-                    <img
-                      src={qrCodeUrl}
-                      alt="Room QR Code"
-                      width={128}
-                      height={128}
-                      className="rounded-md"
-                    />
-                 </div>
-              )}
-              <div className="mt-4 space-y-2">
-                <div className="text-center text-sm text-muted-foreground">
-                  <p>Files expire 15 minutes after upload.</p>
-                </div>
-                {isLocalConnected && (
-                  <div className="flex items-center justify-center gap-2 text-sm text-green-600 bg-green-50 p-2 rounded-md">
-                    <Monitor className="w-4 h-4" />
-                    <span>Local sharing enabled</span>
-                  </div>
-                )}
               </div>
             </div>
-          </aside>
-        </div>
-      </div>
+          </div>
+        </Container>
+      </header>
+
+      <main className="flex-grow-1 py-4">
+        <Container>
+          <Row>
+            <Col lg={8}>
+              <FileUpload onUpload={uploadFiles} />
+              <div className="mt-4">
+                <h2 className="h4 mb-3">Shared Files</h2>
+                {loading ? (
+                  <div className="d-flex align-items-center justify-content-center p-5">
+                    <Spinner animation="border" variant="primary" className="me-2" />
+                    <span className="text-muted">Loading files...</span>
+                  </div>
+                ) : (
+                  <FileList files={files} onDelete={deleteFile} onDownload={downloadFile} />
+                )}
+              </div>
+            </Col>
+
+            <Col lg={4}>
+              <Card className="sticky-top" style={{ top: '1rem' }}>
+                <Card.Body>
+                  <h5 className="mb-3">Share this Room</h5>
+                  <p className="text-muted small">
+                    Others can join this room using the access code or by scanning the QR code.
+                  </p>
+                  {qrCodeUrl && (
+                    <div className="qr-container">
+                      <img
+                        src={qrCodeUrl}
+                        alt="Room QR Code"
+                        width={128}
+                        height={128}
+                      />
+                    </div>
+                  )}
+                  <div className="mt-3 text-center">
+                    <p className="text-muted small mb-2">Files expire 15 minutes after upload.</p>
+                    {isLocalConnected && (
+                      <Badge bg="success" className="d-inline-flex align-items-center gap-1">
+                        <Monitor size={12} />
+                        Local sharing enabled
+                      </Badge>
+                    )}
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+        </Container>
+      </main>
     </div>
   );
 }

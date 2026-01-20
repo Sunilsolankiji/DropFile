@@ -1,8 +1,6 @@
-
 import { useState } from 'react';
 import { UploadCloud } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
 
 type FileUploadProps = {
   onUpload: (files: File[]) => void;
@@ -22,7 +20,7 @@ export default function FileUpload({ onUpload }: FileUploadProps) {
       toast({
         title: 'Too many files',
         description: `You can upload a maximum of ${MAX_FILES} files at a time.`,
-        variant: 'destructive',
+        variant: 'danger',
       });
       return;
     }
@@ -33,7 +31,7 @@ export default function FileUpload({ onUpload }: FileUploadProps) {
         toast({
           title: 'File too large',
           description: `${file.name} is larger than ${MAX_FILE_SIZE_MB}MB and was not added.`,
-          variant: 'destructive',
+          variant: 'danger',
         });
       } else {
         validFiles.push(file);
@@ -45,6 +43,7 @@ export default function FileUpload({ onUpload }: FileUploadProps) {
       toast({
         title: 'Upload Started',
         description: `${validFiles.length} file(s) are being uploaded.`,
+        variant: 'success',
       });
     }
   };
@@ -68,7 +67,7 @@ export default function FileUpload({ onUpload }: FileUploadProps) {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     handleFiles(e.target.files);
-    e.target.value = ''; // Reset input to allow re-uploading the same file
+    e.target.value = '';
   };
 
   return (
@@ -77,23 +76,23 @@ export default function FileUpload({ onUpload }: FileUploadProps) {
       onDragOver={handleDrag}
       onDragLeave={handleDrag}
       onDrop={handleDrop}
-      className={cn(
-        "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all duration-300",
-        isDragging ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/70 hover:bg-secondary/50'
-      )}
+      className={`dropzone ${isDragging ? 'dragging' : ''}`}
     >
       <input
         id="file-upload-input"
         type="file"
         multiple
-        className="hidden"
+        className="d-none"
         onChange={handleFileSelect}
       />
-      <label htmlFor="file-upload-input" className="cursor-pointer w-full h-full flex flex-col items-center justify-center">
-        <UploadCloud className={cn("w-16 h-16 mb-4 transition-colors", isDragging ? 'text-primary' : 'text-muted-foreground')} />
-        <h3 className="text-xl font-semibold">Drag & drop files here</h3>
-        <p className="text-muted-foreground mt-1">or click to browse</p>
-        <p className="text-xs text-muted-foreground mt-4">Max {MAX_FILE_SIZE_MB}MB per file</p>
+      <label htmlFor="file-upload-input" className="d-flex flex-column align-items-center justify-content-center w-100 h-100" style={{ cursor: 'pointer' }}>
+        <UploadCloud
+          size={64}
+          className={`mb-3 ${isDragging ? 'text-primary' : 'text-muted'}`}
+        />
+        <h5 className="mb-1">Drag & drop files here</h5>
+        <p className="text-muted mb-0">or click to browse</p>
+        <small className="text-muted mt-3">Max {MAX_FILE_SIZE_MB}MB per file</small>
       </label>
     </div>
   );

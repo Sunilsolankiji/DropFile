@@ -1,89 +1,176 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Import Bootstrap */
+@import 'bootstrap/dist/css/bootstrap.min.css';
+
+/* Custom theme colors */
+:root {
+  --primary-color: #4a9fd4;
+  --primary-dark: #2d7bb8;
+  --accent-color: #e8a838;
+  --bg-color: #e8f4fc;
+  --text-color: #3d5a6c;
+  --text-muted: #6b8a9a;
+  --card-bg: #ffffff;
+  --border-color: #b8d4e8;
+}
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  min-height: 100vh;
 }
 
-@layer base {
-  :root {
-    --background: 200 67% 95%;
-    --foreground: 210 29% 29%;
-    --card: 200 60% 99%;
-    --card-foreground: 210 29% 29%;
-    --popover: 200 60% 99%;
-    --popover-foreground: 210 29% 29%;
-    --primary: 206 70% 62%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 200 50% 90%;
-    --secondary-foreground: 206 70% 62%;
-    --muted: 200 50% 90%;
-    --muted-foreground: 210 20% 50%;
-    --accent: 36 90% 61%;
-    --accent-foreground: 24 9.8% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 206 50% 85%;
-    --input: 206 50% 85%;
-    --ring: 206 70% 62%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
-  .dark {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 11%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 11%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 206 70% 62%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 36 90% 61%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 206 70% 62%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
+/* Override Bootstrap primary color */
+.btn-primary {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
+.btn-primary:hover {
+  background-color: var(--primary-dark);
+  border-color: var(--primary-dark);
 }
 
+.btn-warning {
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #1a1a1a;
+}
+
+.btn-warning:hover {
+  background-color: #d49830;
+  border-color: #d49830;
+  color: #1a1a1a;
+}
+
+.text-primary {
+  color: var(--primary-color) !important;
+}
+
+.bg-primary {
+  background-color: var(--primary-color) !important;
+}
+
+/* Custom card styling */
+.card {
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* File upload dropzone */
+.dropzone {
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 3rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background-color: var(--card-bg);
+}
+
+.dropzone:hover {
+  border-color: var(--primary-color);
+  background-color: rgba(74, 159, 212, 0.05);
+}
+
+.dropzone.dragging {
+  border-color: var(--primary-color);
+  background-color: rgba(74, 159, 212, 0.1);
+}
+
+/* File list item */
+.file-item {
+  padding: 0.75rem;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.file-item:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* Room code display */
+.room-code {
+  font-family: monospace;
+  font-size: 1.25rem;
+  font-weight: bold;
+  letter-spacing: 0.15em;
+  color: var(--primary-color);
+}
+
+/* Connection status badges */
+.status-local {
+  color: #198754;
+}
+
+.status-cloud {
+  color: #0d6efd;
+}
+
+.status-offline {
+  color: #dc3545;
+}
+
+/* Toast container */
+.toast-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1050;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-color);
+}
+
+/* Header styling */
+.app-header {
+  background-color: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Footer link */
+.footer-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-link:hover {
+  color: var(--primary-color);
+}
+
+/* QR Code container */
+.qr-container {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.qr-container img {
+  border-radius: 8px;
+}
+
+/* Time left badge */
+.time-badge {
+  font-family: monospace;
+  font-size: 0.875rem;
+}
+
+.time-badge.expired {
+  color: #dc3545;
+}
