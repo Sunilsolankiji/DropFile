@@ -89,9 +89,13 @@ function FileListItem({
         <div className="flex items-center gap-2">
           <p className="font-medium truncate" title={file.name}>{file.name}</p>
           {file.isLocal ? (
-            <Monitor className="w-3 h-3 text-green-500 flex-shrink-0" title="Local file" />
+            <span title="Local file">
+              <Monitor className="w-3 h-3 text-green-500 flex-shrink-0" />
+            </span>
           ) : (
-            <Cloud className="w-3 h-3 text-blue-500 flex-shrink-0" title="Cloud file" />
+            <span title="Cloud file">
+              <Cloud className="w-3 h-3 text-blue-500 flex-shrink-0" />
+            </span>
           )}
         </div>
         <p className="text-sm text-muted-foreground">{formatFileSize(file.size)}</p>
