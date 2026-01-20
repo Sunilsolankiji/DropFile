@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { collection, doc, addDoc, deleteDoc, onSnapshot, query, Timestamp, orderBy } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from '@/lib/firebase';
+import { db, storage, isFirebaseConfigured } from '@/lib/firebase';
 import { LocalNetworkService, LocalFileMetadata } from '@/lib/local-network';
+import { LocalNetworkPeerService, NetworkFile, NetworkPeer } from '@/lib/local-peer-service';
 
 export interface SharedFile {
   id: string;
@@ -29,31 +30,45 @@ export function useRoom(roomCode: string) {
   const [isLocalConnected, setIsLocalConnected] = useState(false);
 
   const localServiceRef = useRef<LocalNetworkService | null>(null);
+  const peerServiceRef = useRef<LocalNetworkPeerService | null>(null);
   const localFilesRef = useRef<LocalFileMetadata[]>([]);
+  const peerFilesRef = useRef<NetworkFile[]>([]);
   const firebaseFilesRef = useRef<SharedFile[]>([]);
 
-  // Merge local and firebase files
+  // Merge local, peer, and firebase files
   const mergeFiles = useCallback(() => {
     const localFiles: SharedFile[] = localFilesRef.current.map(f => ({
       id: f.id,
       name: f.name,
       size: f.size,
       type: f.type,
-      url: '', // Local files don't have URLs, they're fetched directly
+      url: '',
       storagePath: '',
       expiresAt: { seconds: Math.floor(f.expiresAt / 1000) },
       isLocal: true,
       peerId: f.peerId
     }));
 
-    // Deduplicate by name (prefer local files)
-    const localNames = new Set(localFiles.map(f => f.name));
+    const peerFiles: SharedFile[] = peerFilesRef.current.map(f => ({
+      id: f.id,
+      name: f.name,
+      size: f.size,
+      type: f.type,
+      url: '', // Peer files are transferred directly
+      storagePath: `peer://${f.peerId}/${f.id}`,
+      expiresAt: { seconds: Math.floor(f.expiresAt / 1000) },
+      isLocal: true,
+      peerId: f.peerId
+    }));
+
+    // Deduplicate by name (prefer local files, then peer files)
+    const localNames = new Set([...localFiles, ...peerFiles].map(f => f.name));
     const uniqueFirebaseFiles = firebaseFilesRef.current.filter(f => !localNames.has(f.name));
 
-    const merged = [...localFiles, ...uniqueFirebaseFiles].sort((a, b) => {
+    const merged = [...localFiles, ...peerFiles, ...uniqueFirebaseFiles].sort((a, b) => {
       const aTime = 'toMillis' in a.expiresAt ? a.expiresAt.toMillis() : a.expiresAt.seconds * 1000;
       const bTime = 'toMillis' in b.expiresAt ? b.expiresAt.toMillis() : b.expiresAt.seconds * 1000;
-      return bTime - aTime; // Most recent first
+      return bTime - aTime;
     });
 
     setFiles(merged);
@@ -116,24 +131,53 @@ export function useRoom(roomCode: string) {
     };
   }, [roomCode, mergeFiles]);
 
+  // Initialize peer network service for same-network sharing
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const peerService = new LocalNetworkPeerService(
+      roomCode,
+      `Device ${Math.random().toString(36).substr(2, 5)}`,
+      (peers) => {
+        setLocalPeerCount(peers.length);
+      },
+      (files) => {
+        peerFilesRef.current = files;
+        mergeFiles();
+      }
+    );
+
+    peerService.connect().then((connected) => {
+      if (connected) {
+        peerServiceRef.current = peerService;
+        if (!isFirebaseConfigured()) {
+          setConnectionMode('local');
+        }
+      }
+    });
+
+    return () => {
+      peerService.disconnect();
+      peerServiceRef.current = null;
+    };
+  }, [roomCode, mergeFiles, isFirebaseConfigured()]);
+
   // Firebase listener
   useEffect(() => {
     if (!roomCode) return;
     setLoading(true);
 
-    const apiKey = db.app.options.apiKey;
-    if (!apiKey || apiKey === 'YOUR_API_KEY_HERE' || apiKey === 'your_api_key_here' || apiKey === 'undefined') {
-      // No Firebase configured, rely on local only
-      if (isLocalConnected) {
-        setConnectionMode('local');
-        setLoading(false);
-        return;
-      }
-      setError("No connection available. Configure Firebase or ensure you're on the same network as other users.");
+    // Check if Firebase is properly configured
+    if (!isFirebaseConfigured()) {
+      // No Firebase - use local network only
+      console.log('Firebase not configured - using local network mode');
+      setConnectionMode('local');
+      setError(null);
       setLoading(false);
       return;
     }
 
+    // Firebase is configured, set up listener
     const roomRef = doc(db, 'rooms', roomCode);
     const filesCollectionRef = collection(roomRef, 'files');
     const q = query(filesCollectionRef, orderBy('createdAt', 'desc'));
@@ -155,44 +199,55 @@ export function useRoom(roomCode: string) {
       });
 
       firebaseFilesRef.current = freshFiles;
+      if (peerFilesRef.current.length > 0) {
+        setConnectionMode('both');
+      } else {
+        setConnectionMode('firebase');
+      }
       mergeFiles();
       setLoading(false);
     }, (err) => {
       console.error("Firebase onSnapshot error:", err);
-      if (isLocalConnected) {
+      // Fall back to local if Firebase fails
+      if (peerFilesRef.current.length > 0 || peerServiceRef.current) {
         setConnectionMode('local');
+        setError(null);
         setLoading(false);
       } else {
-        setError("Could not connect to the room. Check your Firebase config & security rules.");
+        setError("Firebase connection failed. Use local network mode instead.");
         setLoading(false);
       }
     });
 
     return () => unsubscribe();
-  }, [roomCode, deleteFile, mergeFiles, isLocalConnected]);
+  }, [roomCode, deleteFile, mergeFiles]);
 
   const uploadFiles = useCallback(async (filesToUpload: File[]) => {
     if (!roomCode) return;
 
     for (const file of filesToUpload) {
-      // Try local first if connected and there are peers
-      if (localServiceRef.current && isLocalConnected) {
+      // Try peer network first if available
+      if (peerServiceRef.current) {
         try {
-          await localServiceRef.current.addFile(file);
-          // If we have Firebase too, also upload there for remote access
-          if (connectionMode === 'both' || connectionMode === 'firebase') {
+          await peerServiceRef.current.addFile(file);
+          // If we also have Firebase, upload there too
+          if (isFirebaseConfigured()) {
             uploadToFirebase(file);
           }
           continue;
         } catch (err) {
-          console.error("Local upload failed, falling back to Firebase:", err);
+          console.error("Peer upload failed, trying Firebase:", err);
         }
       }
 
-      // Firebase upload
-      uploadToFirebase(file);
+      // Fall back to Firebase if available
+      if (isFirebaseConfigured()) {
+        uploadToFirebase(file);
+      } else {
+        setError("No connection available. Make sure you're on the same network or configure Firebase.");
+      }
     }
-  }, [roomCode, isLocalConnected, connectionMode]);
+  }, [roomCode]);
 
   const uploadToFirebase = useCallback((file: File) => {
     if (!roomCode) return;
@@ -240,6 +295,14 @@ export function useRoom(roomCode: string) {
         if (blob) {
           return URL.createObjectURL(blob);
         }
+      }
+    }
+
+    // Check if it's a peer file
+    if (peerServiceRef.current) {
+      const blob = peerServiceRef.current.getLocalFile(fileId);
+      if (blob) {
+        return URL.createObjectURL(blob);
       }
     }
 

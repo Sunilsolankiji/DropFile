@@ -60,26 +60,52 @@ export function isFirebaseConfigured(): boolean {
     config.apiKey &&
     config.apiKey !== 'your_api_key_here' &&
     config.apiKey !== 'YOUR_API_KEY_HERE' &&
+    config.apiKey !== '' &&
     config.projectId &&
-    config.storageBucket
+    config.projectId !== '' &&
+    config.storageBucket &&
+    config.storageBucket !== ''
   );
+}
+
+// Get the active config for debugging
+export function getActiveFirebaseConfig(): FirebaseConfig {
+  return getFirebaseConfig();
 }
 
 // Get the active config
 const firebaseConfig = getFirebaseConfig();
+const configValid = isFirebaseConfigured();
+
+// Log configuration status for debugging
+if (typeof window !== 'undefined') {
+  console.log('Firebase Configuration Status:', {
+    isConfigured: configValid,
+    hasApiKey: !!firebaseConfig.apiKey,
+    hasProjectId: !!firebaseConfig.projectId,
+    hasStorageBucket: !!firebaseConfig.storageBucket,
+    source: getStoredConfig() ? 'localStorage' : 'environment'
+  });
+}
 
 // Initialize Firebase
 let app: FirebaseApp;
 let db: Firestore;
 let storage: FirebaseStorage;
 
-try {
-  app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-  db = getFirestore(app);
-  storage = getStorage(app);
-} catch (error) {
-  console.error('Error initializing Firebase:', error);
-  // Create a dummy app for when Firebase is not configured
+if (configValid) {
+  try {
+    app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+    db = getFirestore(app);
+    storage = getStorage(app);
+    console.log('Firebase initialized successfully');
+  } catch (error) {
+    console.error('Error initializing Firebase:', error);
+    throw new Error(`Firebase initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+} else {
+  console.warn('Firebase not configured. File sharing will only work between browser tabs.');
+  // Create dummy objects when Firebase is not configured
   app = {} as FirebaseApp;
   db = {} as Firestore;
   storage = {} as FirebaseStorage;
