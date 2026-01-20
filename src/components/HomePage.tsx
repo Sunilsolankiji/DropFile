@@ -1,15 +1,22 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Container, Row, Col, Card, Form, Button } from 'react-bootstrap';
-import { ArrowRight, Sparkles, Share2, Shield, Zap } from 'lucide-react';
+import { ArrowRight, Sparkles, Share2, Shield, Zap, Settings } from 'lucide-react';
 import { generateAccessCode } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { SettingsButton } from '@/components/SettingsModal';
+import { isFirebaseConfigured } from '@/lib/firebase';
 
 export default function HomePage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [joinCode, setJoinCode] = useState('');
   const [customCode, setCustomCode] = useState('');
+
+  const handleConfigSaved = () => {
+    // Reload the page to reinitialize Firebase with new config
+    window.location.reload();
+  };
 
   const handleCreateRoom = (code: string) => {
     if (code) {
@@ -50,6 +57,11 @@ export default function HomePage() {
 
   return (
     <div className="min-vh-100 d-flex flex-column">
+      {/* Top bar with settings */}
+      <div className="position-absolute top-0 end-0 p-3">
+        <SettingsButton onConfigSaved={handleConfigSaved} />
+      </div>
+
       <Container className="flex-grow-1 d-flex flex-column align-items-center justify-content-center py-5">
         {/* Hero Section */}
         <header className="text-center mb-5">
@@ -59,9 +71,15 @@ export default function HomePage() {
             </span>
           </div>
           <h1 className="page-title">DropFile</h1>
-          <p className="text-muted fs-5 mb-0">
+          <p className="text-muted fs-5 mb-3">
             Share files instantly with anyone using a simple access code
           </p>
+          {!isFirebaseConfigured() && (
+            <div className="alert alert-warning d-inline-flex align-items-center gap-2 py-2 px-3" role="alert">
+              <Settings size={16} style={{ width: 16, height: 16 }} />
+              <small>Configure Firebase in settings for cross-device sharing</small>
+            </div>
+          )}
         </header>
 
         {/* Main Card */}

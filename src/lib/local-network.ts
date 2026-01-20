@@ -1,6 +1,14 @@
 /**
  * Local Network File Sharing Service
- * Uses BroadcastChannel for same-browser sharing and WebRTC for same-network peers
+ *
+ * IMPORTANT: BroadcastChannel only works within the SAME BROWSER (different tabs).
+ * For cross-device sharing on the same network, we rely on Firebase as the
+ * signaling/sync mechanism. The "local" aspect here refers to:
+ * 1. Same-browser tab sharing via BroadcastChannel (instant)
+ * 2. Cross-device sharing via Firebase (works across network)
+ *
+ * True peer-to-peer WebRTC would require a signaling server, which adds complexity.
+ * Firebase serves as both the signaling mechanism and fallback storage.
  */
 
 export interface LocalFile {
@@ -33,6 +41,14 @@ type MessageType =
 
 const FILE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+/**
+ * LocalNetworkService provides same-browser tab communication.
+ * For cross-device sharing, Firebase is used (handled in use-room.ts).
+ *
+ * This service is useful for:
+ * - Sharing files between tabs in the same browser instantly
+ * - Caching files locally for faster re-downloads
+ */
 export class LocalNetworkService {
   private channel: BroadcastChannel | null = null;
   private peerId: string;
@@ -63,9 +79,14 @@ export class LocalNetworkService {
     return `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  /**
+   * Connect to the local broadcast channel.
+   * Note: This only enables same-browser communication.
+   * Cross-device sharing requires Firebase (configured separately).
+   */
   async connect(): Promise<boolean> {
     try {
-      // Use BroadcastChannel for same-origin communication
+      // Use BroadcastChannel for same-origin communication (same browser only)
       if ('BroadcastChannel' in window) {
         this.channel = new BroadcastChannel(`dropfile_room_${this.roomCode}`);
         this.channel.onmessage = (event) => this.handleMessage(event.data);

@@ -6,6 +6,7 @@ import FileUpload from '@/components/FileUpload';
 import FileList from '@/components/FileList';
 import { useToast } from '@/hooks/use-toast';
 import { useRoom } from '@/hooks/use-room';
+import { SettingsButton } from '@/components/SettingsModal';
 
 type RoomPageProps = {
   roomCode: string;
@@ -56,28 +57,28 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
   const getConnectionBadge = () => {
     if (connectionMode === 'local') {
       return (
-        <span className="status-badge status-local">
+        <span className="status-badge status-local" title="Same-browser only - configure Firebase for cross-device sharing">
           <Monitor size={14} style={{ width: 14, height: 14 }} />
-          Local {localPeerCount > 0 && `(${localPeerCount})`}
+          Browser Only
         </span>
       );
     } else if (connectionMode === 'both') {
       return (
-        <span className="status-badge status-local">
+        <span className="status-badge status-local" title="Files sync across all devices via Firebase">
           <Wifi size={14} style={{ width: 14, height: 14 }} />
-          Local + Cloud
+          Connected
         </span>
       );
     } else if (connectionMode === 'firebase') {
       return (
-        <span className="status-badge status-cloud">
+        <span className="status-badge status-cloud" title="Files sync across all devices via Firebase">
           <Cloud size={14} style={{ width: 14, height: 14 }} />
-          Cloud
+          Cloud Sync
         </span>
       );
     }
     return (
-      <span className="status-badge status-offline">
+      <span className="status-badge status-offline" title="No connection - configure Firebase for file sharing">
         <WifiOff size={14} style={{ width: 14, height: 14 }} />
         Offline
       </span>
@@ -114,6 +115,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                   >
                     {hasCopied ? <Check size={16} style={{ width: 16, height: 16 }} /> : <Copy size={16} style={{ width: 16, height: 16 }} />}
                   </Button>
+                  <SettingsButton onConfigSaved={() => window.location.reload()} />
                 </div>
               </div>
             </div>

@@ -2,14 +2,14 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-blue?logo=github)](https://github.com/Sunilsolankiji/DropFile)
 
-A React + Vite application for instant file sharing via access codes. Supports local network sharing (same network peers) with Firebase fallback for remote sharing.
+A React + Vite application for instant file sharing via access codes. Share files across multiple devices on the same network using Firebase.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
-- A Firebase project with Firestore and Storage enabled (optional - local sharing works without Firebase)
+- **A Firebase project with Firestore and Storage enabled (REQUIRED for cross-device sharing)**
 
 ### Installation
 
@@ -19,11 +19,13 @@ A React + Vite application for instant file sharing via access codes. Supports l
    npm install
    ```
 
-2. (Optional) Copy `.env.example` to `.env` and fill in your Firebase credentials for cloud sharing:
+2. **Copy `.env.example` to `.env` and fill in your Firebase credentials:**
 
    ```bash
    cp .env.example .env
    ```
+
+   ⚠️ **Firebase is required for sharing files between different devices.** Without Firebase, file sharing only works between tabs in the same browser.
 
 3. Start the development server:
 
@@ -38,72 +40,53 @@ A React + Vite application for instant file sharing via access codes. Supports l
 - **Create Spaces**: Generate random access codes or use custom codes
 - **Join Spaces**: Enter an access code to join an existing room
 - **File Sharing**: Drag and drop or browse to upload files
-- **Local Network Sharing**: Files are shared directly between peers on the same network using BroadcastChannel
-- **Cloud Fallback**: When Firebase is configured, files are also uploaded to the cloud for remote access
-- **Real-time Updates**: Files sync across all connected clients
+- **Cross-Device Sharing**: Share files between any devices using the same room code (requires Firebase)
+- **Same-Browser Sharing**: Instant file sharing between browser tabs (no Firebase needed)
+- **Real-time Updates**: Files sync across all connected clients via Firebase
 - **Auto-expiry**: Files automatically expire after 15 minutes
 - **QR Code Sharing**: Easily share room links via QR code
-- **Connection Status**: Visual indicators show whether you're connected locally, via cloud, or both
+- **Connection Status**: Visual indicators show connection type
 
 ## How File Sharing Works
 
-1. **Same Browser/Device**: Uses BroadcastChannel API for instant file sharing between tabs
-2. **Same Network**: Files are shared peer-to-peer using BroadcastChannel when multiple users join the same room code
-3. **Remote/Cloud**: When Firebase is configured, files are also uploaded to Firebase Storage for access from anywhere
+### Cross-Device Sharing (Multiple Computers/Phones on Same Network)
 
-The app automatically detects the best connection method and displays the status in the room header.
+**Requires Firebase configuration.** Here's how it works:
+
+1. Device A uploads a file → File is stored in Firebase Storage
+2. Firebase Firestore notifies all devices in the same room
+3. Device B sees the file and can download it from Firebase Storage
+
+This works across:
+- ✅ Different computers on the same WiFi
+- ✅ Phone and computer on the same network
+- ✅ Any devices anywhere in the world (with internet)
+
+### Same-Browser Sharing (Multiple Tabs)
+
+Uses BroadcastChannel API for instant, no-server communication:
+- ✅ Works without Firebase
+- ✅ Instant file transfer between tabs
+- ❌ Does NOT work across different browsers/devices
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `VITE_FIREBASE_API_KEY` | Firebase API key (optional) |
-| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase auth domain (optional) |
-| `VITE_FIREBASE_PROJECT_ID` | Firebase project ID (optional) |
-| `VITE_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket (optional) |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID (optional) |
-| `VITE_FIREBASE_APP_ID` | Firebase app ID (optional) |
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `VITE_FIREBASE_API_KEY` | Firebase API key | Yes* |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase auth domain | Yes* |
+| `VITE_FIREBASE_PROJECT_ID` | Firebase project ID | Yes* |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket | Yes* |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID | Yes* |
+| `VITE_FIREBASE_APP_ID` | Firebase app ID | Yes* |
 
-**Note**: Firebase is optional. The app works for local network file sharing without any Firebase configuration.
+*Required for cross-device file sharing. Without Firebase, only same-browser tab sharing works.
 
-## Scripts
+## Setting Up Firebase
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run typecheck` - Run TypeScript type checking
-
-## Deploying to GitHub Pages
-
-This project includes a GitHub Actions workflow for automatic deployment to GitHub Pages.
-
-### Setup:
-
-1. Push your code to a GitHub repository named `DropFile` (or update the `base` in `vite.config.ts` to match your repo name)
-
-2. Go to your repository **Settings** → **Pages**
-
-3. Under "Build and deployment", select **GitHub Actions** as the source
-
-4. (Optional) Add Firebase secrets in **Settings** → **Secrets and variables** → **Actions**:
-   - `VITE_FIREBASE_API_KEY`
-   - `VITE_FIREBASE_AUTH_DOMAIN`
-   - `VITE_FIREBASE_PROJECT_ID`
-   - `VITE_FIREBASE_STORAGE_BUCKET`
-   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
-   - `VITE_FIREBASE_APP_ID`
-
-5. Push to the `main` branch - the workflow will automatically build and deploy
-
-Your app will be available at: `https://<username>.github.io/DropFile/`
-
-## Tech Stack
-
-- React 18
-- TypeScript
-- Vite
-- Tailwind CSS
-- Firebase (Firestore & Storage) - Optional
-- Radix UI Components
-- React Router
-- BroadcastChannel API for local sharing
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Create a new project
+3. Enable **Firestore Database** (start in test mode for development)
+4. Enable **Storage** (start in test mode for development)
+5. Go to Project Settings → General → Your apps → Add web app
+6. Copy the config values to your `.env` file
