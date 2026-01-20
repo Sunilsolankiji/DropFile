@@ -12,6 +12,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet" />
   </head>
   <body class="font-body antialiased h-full bg-background">
+    <!-- GitHub Pages SPA redirect handling -->
+    <script>
+      (function() {
+        var redirect = sessionStorage.getItem('redirect');
+        if (redirect) {
+          sessionStorage.removeItem('redirect');
+          window.history.replaceState(null, null, redirect);
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

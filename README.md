@@ -1,5 +1,7 @@
 # DropFile - Instant File Sharing
 
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue?logo=github)](https://github.com/Sunilsolankiji/DropFile)
+
 A React + Vite application for instant file sharing via access codes. Supports local network sharing (same network peers) with Firebase fallback for remote sharing.
 
 ## Getting Started
@@ -70,6 +72,30 @@ The app automatically detects the best connection method and displays the status
 - `npm run build` - Build for production
 - `npm run preview` - Preview production build
 - `npm run typecheck` - Run TypeScript type checking
+
+## Deploying to GitHub Pages
+
+This project includes a GitHub Actions workflow for automatic deployment to GitHub Pages.
+
+### Setup:
+
+1. Push your code to a GitHub repository named `DropFile` (or update the `base` in `vite.config.ts` to match your repo name)
+
+2. Go to your repository **Settings** → **Pages**
+
+3. Under "Build and deployment", select **GitHub Actions** as the source
+
+4. (Optional) Add Firebase secrets in **Settings** → **Secrets and variables** → **Actions**:
+   - `VITE_FIREBASE_API_KEY`
+   - `VITE_FIREBASE_AUTH_DOMAIN`
+   - `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`
+   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+   - `VITE_FIREBASE_APP_ID`
+
+5. Push to the `main` branch - the workflow will automatically build and deploy
+
+Your app will be available at: `https://<username>.github.io/DropFile/`
 
 ## Tech Stack
 
