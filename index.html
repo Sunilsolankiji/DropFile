@@ -18,6 +18,8 @@
         var redirect = sessionStorage.getItem('redirect');
         if (redirect) {
           sessionStorage.removeItem('redirect');
+          // Remove the /DropFile prefix if present to get the actual route
+          var route = redirect.replace(/^\/DropFile/, '') || '/';
           window.history.replaceState(null, null, redirect);
         }
       })();

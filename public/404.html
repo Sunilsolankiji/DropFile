@@ -6,18 +6,16 @@
     <title>DropFile - Redirecting...</title>
     <script>
       // Single Page Apps for GitHub Pages
-      // https://github.com/rafgraph/spa-github-pages
-      // This script handles client-side routing for GitHub Pages
-      // by redirecting 404s to the index page with the path stored in sessionStorage
+      // This script redirects 404s to index.html with the path stored in sessionStorage
       (function() {
-        var pathSegmentsToKeep = 1; // Keep /DropFile/ prefix
-        var l = window.location;
-        var path = l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') +
-          '/?p=/' + l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
-          (l.search ? '&q=' + l.search.slice(1).replace(/&/g, '~and~') : '') +
-          l.hash;
-        sessionStorage.setItem('redirect', l.pathname + l.search + l.hash);
-        l.replace(path);
+        var repo = '/DropFile';
+        var fullPath = window.location.pathname;
+
+        // Store the attempted path for the SPA to handle
+        sessionStorage.setItem('redirect', fullPath + window.location.search + window.location.hash);
+
+        // Redirect to the base URL
+        window.location.replace(repo + '/');
       })();
     </script>
   </head>
@@ -25,4 +23,3 @@
     <p>Redirecting...</p>
   </body>
 </html>
-
