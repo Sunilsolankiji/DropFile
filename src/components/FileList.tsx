@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Card, Button } from 'react-bootstrap';
-import { FileText, Download, Trash2, Clock, Inbox, Monitor, Cloud, File, Image, Music, Video, FileArchive, FileCode } from 'lucide-react';
+import { FileText, Download, Trash2, Clock, Inbox, File, Image, Music, Video, FileArchive, FileCode } from 'lucide-react';
 import { formatFileSize } from '@/lib/utils';
-import type { SharedFile } from '@/hooks/use-room';
-import { Timestamp } from 'firebase/firestore';
+import type { SharedFile } from '@/hooks/use-backend-room';
 
 interface FileListProps {
   files: SharedFile[];
-  onDelete: (fileId: string, storagePath: string) => void;
-  onDownload?: (fileId: string) => Promise<string | null>;
+  onDelete: (fileId: string) => void;
+  onDownload?: (fileId: string, fileName: string) => Promise<void>;
 }
 
 // Get icon based on file type
@@ -28,8 +27,8 @@ function FileListItem({
   onDownload
 }: {
   file: SharedFile;
-  onDelete: (fileId: string, storagePath: string) => void;
-  onDownload?: (fileId: string) => Promise<string | null>;
+  onDelete: (fileId: string) => void;
+  onDownload?: (fileId: string, fileName: string) => Promise<void>;
 }) {
   const [timeLeft, setTimeLeft] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
@@ -37,13 +36,7 @@ function FileListItem({
   useEffect(() => {
     const calculateTimeLeft = () => {
       const now = Date.now();
-      if (!file.expiresAt) {
-        setTimeLeft('N/A');
-        return null;
-      }
-      const expiryTime = (file.expiresAt instanceof Timestamp)
-        ? file.expiresAt.toMillis()
-        : new Date((file.expiresAt as { seconds: number }).seconds * 1000).getTime();
+      const expiryTime = file.expiresAt; // Already a timestamp in milliseconds
       const distance = expiryTime - now;
 
       if (distance < 0) {
@@ -70,24 +63,13 @@ function FileListItem({
   }, [file.expiresAt]);
 
   const handleDownload = async () => {
-    if (file.isLocal && onDownload) {
+    if (onDownload) {
       setIsDownloading(true);
       try {
-        const url = await onDownload(file.id);
-        if (url) {
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = file.name;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }
+        await onDownload(file.id, file.name);
       } finally {
         setIsDownloading(false);
       }
-    } else if (file.url) {
-      window.open(file.url, '_blank');
     }
   };
 
@@ -100,18 +82,15 @@ function FileListItem({
       </div>
       <div className="flex-grow-1 overflow-hidden me-3">
         <div className="d-flex align-items-center gap-2 mb-1">
-          <span className="file-name text-truncate" title={file.name}>{file.name}</span>
-          {file.isLocal ? (
-            <span title="Local file" className="badge bg-success bg-opacity-10 text-success d-inline-flex align-items-center gap-1 px-2 py-1" style={{ fontSize: '0.7rem' }}>
-              <Monitor size={10} style={{ width: 10, height: 10 }} /> Local
-            </span>
-          ) : (
-            <span title="Cloud file" className="badge bg-primary bg-opacity-10 text-primary d-inline-flex align-items-center gap-1 px-2 py-1" style={{ fontSize: '0.7rem' }}>
-              <Cloud size={10} style={{ width: 10, height: 10 }} /> Cloud
-            </span>
-          )}
+          <h6 className="mb-0">{file.name}</h6>
+          <span title="Backend file" className="badge bg-primary bg-opacity-10 text-primary d-inline-flex align-items-center gap-1 px-2 py-1" style={{ fontSize: '0.7rem' }}>
+            Backend
+          </span>
         </div>
-        <span className="file-size">{formatFileSize(file.size)}</span>
+        <div className="d-flex align-items-center gap-2">
+          <small>{file.peerName}</small>
+          <span className="file-size">{formatFileSize(file.size)}</span>
+        </div>
       </div>
       <div className="d-flex align-items-center gap-2">
         <span className={`time-badge d-flex align-items-center gap-1 ${timeLeft === 'Expired' ? 'expired' : ''}`}>
@@ -131,7 +110,7 @@ function FileListItem({
         <Button
           variant="outline-danger"
           size="sm"
-          onClick={() => onDelete(file.id, file.storagePath)}
+          onClick={() => onDelete(file.id)}
           className="d-flex align-items-center justify-content-center"
           style={{ width: '36px', height: '36px', padding: 0 }}
         >

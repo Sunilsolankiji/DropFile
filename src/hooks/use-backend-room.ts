@@ -1,0 +1,197 @@
+/**
+ * Backend-only Room Hook
+ * Uses the new backend server for all file sharing
+ * No Firebase, no local-network complexity
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { NetworkPeerService, NetworkPeer } from '@/lib/network-peer-service';
+
+export interface SharedFile {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  peerId: string;
+  peerName: string;
+  expiresAt: number;
+  uploadedAt?: number;
+}
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+
+export function useRoom(roomCode: string) {
+  const [files, setFiles] = useState<SharedFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [peers, setPeers] = useState<NetworkPeer[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+
+  const serviceRef = useRef<NetworkPeerService | null>(null);
+  const peerNameRef = useRef<string | null>(null);
+
+  // Create stable peer name on first render
+  if (!peerNameRef.current) {
+    peerNameRef.current = 'Device ' + Math.random().toString(36).substr(2, 5);
+  }
+
+  // Initialize backend service
+  useEffect(() => {
+    let mounted = true;
+
+    // Skip if already connected to this room
+    if (serviceRef.current && isConnected) {
+      console.log('Already connected to room, skipping');
+      return;
+    }
+
+    const initService = async () => {
+      try {
+        console.log(`Connecting to backend: ${BACKEND_URL}`);
+
+        const service = new NetworkPeerService(
+          BACKEND_URL,
+          roomCode,
+          peerNameRef.current!,
+          {
+            onPeersChanged: (newPeers) => {
+              if (mounted) {
+                setPeers(newPeers);
+              }
+            },
+            onFilesChanged: (newFiles) => {
+              if (mounted) {
+                const sharedFiles: SharedFile[] = newFiles.map(f => ({
+                  id: f.id,
+                  name: f.name,
+                  size: f.size,
+                  type: f.type,
+                  peerId: f.peerId,
+                  peerName: f.peerName,
+                  expiresAt: f.expiresAt,
+                  uploadedAt: f.uploadedAt
+                }));
+                setFiles(sharedFiles);
+              }
+            },
+            onPeerJoined: (peer) => {
+              console.log(`Peer joined: ${peer.name}`);
+            },
+            onPeerLeft: (peerId) => {
+              console.log(`Peer left: ${peerId}`);
+            },
+            onFileAdded: (file) => {
+              console.log(`File added: ${file.name}`);
+            },
+            onFileRemoved: (fileId) => {
+              console.log(`File removed: ${fileId}`);
+            }
+          }
+        );
+
+        const connected = await service.connect();
+        if (mounted) {
+          setIsConnected(connected);
+          if (connected) {
+            serviceRef.current = service;
+            setError(null);
+            setLoading(false);
+          } else {
+            setError('Failed to connect to backend server');
+            setLoading(false);
+          }
+        }
+      } catch (err) {
+        if (mounted) {
+          const errorMsg = err instanceof Error ? err.message : 'Connection failed';
+          console.error('Backend connection error:', err);
+          setError(`Cannot connect to backend: ${errorMsg}`);
+          setLoading(false);
+        }
+      }
+    };
+
+    initService();
+
+    return () => {
+      mounted = false;
+      // Don't disconnect immediately - let the service persist
+      // Only disconnect when component fully unmounts or room changes
+    };
+  }, [roomCode]);
+
+  // Upload files
+  const uploadFiles = useCallback(async (filesToUpload: File[]) => {
+    if (!serviceRef.current) {
+      setError('Not connected to backend');
+      return;
+    }
+
+    try {
+      for (const file of filesToUpload) {
+        const success = await serviceRef.current.addFile(file);
+        if (!success) {
+          setError(`Failed to upload ${file.name}`);
+        }
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Upload failed';
+      setError(errorMsg);
+    }
+  }, []);
+
+  // Download file
+  const downloadFile = useCallback(async (fileId: string, fileName: string) => {
+    if (!serviceRef.current) {
+      setError('Not connected to backend');
+      return;
+    }
+
+    try {
+      const blob = await serviceRef.current.downloadFile(fileId);
+      if (blob) {
+        // Trigger browser download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        setError('Failed to download file');
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Download failed';
+      setError(errorMsg);
+    }
+  }, []);
+
+  // Delete file
+  const deleteFile = useCallback((fileId: string) => {
+    if (!serviceRef.current) {
+      setError('Not connected to backend');
+      return;
+    }
+
+    try {
+      serviceRef.current.removeFile(fileId);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Delete failed';
+      setError(errorMsg);
+    }
+  }, []);
+
+  return {
+    files,
+    uploadFiles,
+    deleteFile,
+    downloadFile,
+    loading,
+    error,
+    peers,
+    isConnected,
+    peerCount: peers.length,
+    connectionMode: isConnected ? 'backend' : 'offline' as const
+  };
+}
+

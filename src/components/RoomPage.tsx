@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Spinner, Badge } from 'react-bootstrap';
-import { Copy, Users, Home, Check, Wifi, WifiOff, Cloud, Monitor, QrCode, Clock } from 'lucide-react';
+import { Copy, Users, Home, Check, WifiOff, Server, QrCode, Clock } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import FileList from '@/components/FileList';
 import { useToast } from '@/hooks/use-toast';
-import { useRoom } from '@/hooks/use-room';
+import { useRoom } from '@/hooks/use-backend-room';
 import { SettingsButton } from '@/components/SettingsModal';
 
 type RoomPageProps = {
@@ -21,9 +21,8 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
     downloadFile,
     loading,
     error,
-    connectionMode,
-    localPeerCount,
-    isLocalConnected
+    isConnected,
+    peerCount
   } = useRoom(roomCode);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [hasCopied, setHasCopied] = useState(false);
@@ -43,44 +42,57 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
     }
   }, [error, toast]);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(roomCode);
-    setHasCopied(true);
-    toast({
-      title: 'Copied!',
-      description: 'Access code copied to clipboard.',
-      variant: 'success'
-    });
-    setTimeout(() => setHasCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setHasCopied(true);
+      toast({
+        title: 'Copied!',
+        description: 'Access code copied to clipboard.',
+        variant: 'success'
+      });
+      setTimeout(() => setHasCopied(false), 2000);
+    } catch (err) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = roomCode;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setHasCopied(true);
+        toast({
+          title: 'Copied!',
+          description: 'Access code copied to clipboard.',
+          variant: 'success'
+        });
+        setTimeout(() => setHasCopied(false), 2000);
+      } catch (e) {
+        toast({
+          title: 'Copy Failed',
+          description: 'Please copy the code manually.',
+          variant: 'danger'
+        });
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   const getConnectionBadge = () => {
-    if (connectionMode === 'local') {
+    if (isConnected) {
       return (
-        <span className="status-badge status-local" title="Same-browser only - configure Firebase for cross-device sharing">
-          <Monitor size={14} style={{ width: 14, height: 14 }} />
-          Browser Only
-        </span>
-      );
-    } else if (connectionMode === 'both') {
-      return (
-        <span className="status-badge status-local" title="Files sync across all devices via Firebase">
-          <Wifi size={14} style={{ width: 14, height: 14 }} />
-          Connected
-        </span>
-      );
-    } else if (connectionMode === 'firebase') {
-      return (
-        <span className="status-badge status-cloud" title="Files sync across all devices via Firebase">
-          <Cloud size={14} style={{ width: 14, height: 14 }} />
-          Cloud Sync
+        <span className="status-badge status-local" title="Connected to backend server">
+          <Server size={14} style={{ width: 14, height: 14 }} />
+          Backend Connected
         </span>
       );
     }
     return (
-      <span className="status-badge status-offline" title="No connection - configure Firebase for file sharing">
+      <span className="status-badge status-offline" title="Connecting to backend server">
         <WifiOff size={14} style={{ width: 14, height: 14 }} />
-        Offline
+        Connecting...
       </span>
     );
   };
@@ -186,15 +198,15 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                     </div>
                   </div>
 
-                  {isLocalConnected && (
+                  {isConnected && (
                     <div className="d-flex align-items-center gap-2 p-3 rounded" style={{ background: 'rgba(16, 185, 129, 0.1)' }}>
-                      <Monitor size={18} style={{ width: 18, height: 18 }} className="text-success flex-shrink-0" />
+                      <Users size={18} style={{ width: 18, height: 18 }} className="text-success flex-shrink-0" />
                       <div>
-                        <div className="small fw-semibold text-success">Local sharing active</div>
+                        <div className="small fw-semibold text-success">Backend Connected</div>
                         <div className="text-muted small">
-                          {localPeerCount > 0
-                            ? `${localPeerCount} peer${localPeerCount > 1 ? 's' : ''} connected`
-                            : 'Waiting for peers...'
+                          {peerCount > 1
+                            ? `${peerCount - 1} other device${peerCount - 1 > 1 ? 's' : ''} connected`
+                            : 'You are the only one here'
                           }
                         </div>
                       </div>

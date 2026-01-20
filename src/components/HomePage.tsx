@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Container, Row, Col, Card, Form, Button } from 'react-bootstrap';
-import { ArrowRight, Sparkles, Share2, Shield, Zap, Settings } from 'lucide-react';
+import { ArrowRight, Sparkles, Share2, Zap, Shield } from 'lucide-react';
 import { generateAccessCode } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { SettingsButton } from '@/components/SettingsModal';
-import { isFirebaseConfigured } from '@/lib/firebase';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -14,8 +13,7 @@ export default function HomePage() {
   const [customCode, setCustomCode] = useState('');
 
   const handleConfigSaved = () => {
-    // Reload the page to reinitialize Firebase with new config
-    window.location.reload();
+    // Optional: Handle config save if needed
   };
 
   const handleCreateRoom = (code: string) => {
@@ -74,12 +72,6 @@ export default function HomePage() {
           <p className="text-muted fs-5 mb-3">
             Share files instantly with anyone using a simple access code
           </p>
-          {!isFirebaseConfigured() && (
-            <div className="alert alert-warning d-inline-flex align-items-center gap-2 py-2 px-3" role="alert">
-              <Settings size={16} style={{ width: 16, height: 16 }} />
-              <small>Configure Firebase in settings for cross-device sharing</small>
-            </div>
-          )}
         </header>
 
         {/* Main Card */}
