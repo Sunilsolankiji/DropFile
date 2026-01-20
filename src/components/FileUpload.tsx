@@ -1,6 +1,5 @@
-"use client";
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { UploadCloud } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -66,7 +65,7 @@ export default function FileUpload({ onUpload }: FileUploadProps) {
     setIsDragging(false);
     handleFiles(e.dataTransfer.files);
   };
-  
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     handleFiles(e.target.files);
     e.target.value = ''; // Reset input to allow re-uploading the same file

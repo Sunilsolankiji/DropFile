@@ -1,9 +1,6 @@
-"use client";
-
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { Copy, Users, Home, Loader2, Check } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Copy, Users, Home, Loader2, Check, Wifi, WifiOff, Cloud, Monitor } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import FileList from '@/components/FileList';
 import { Button } from '@/components/ui/button';
@@ -16,17 +13,25 @@ type RoomPageProps = {
 
 export default function RoomPage({ roomCode }: RoomPageProps) {
   const { toast } = useToast();
-  const { files, uploadFiles, deleteFile, loading, error } = useRoom(roomCode);
+  const {
+    files,
+    uploadFiles,
+    deleteFile,
+    downloadFile,
+    loading,
+    error,
+    connectionMode,
+    localPeerCount,
+    isLocalConnected
+  } = useRoom(roomCode);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [hasCopied, setHasCopied] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const url = window.location.href;
-      setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=128x128&data=${encodeURIComponent(url)}`);
-    }
+    const url = window.location.href;
+    setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=128x128&data=${encodeURIComponent(url)}`);
   }, []);
-  
+
   useEffect(() => {
     if (error) {
       toast({
@@ -47,21 +52,49 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
     setTimeout(() => setHasCopied(false), 2000);
   };
 
+  const getConnectionStatusIcon = () => {
+    if (connectionMode === 'local') {
+      return <Monitor className="w-4 h-4 text-green-500" />;
+    } else if (connectionMode === 'both') {
+      return <Wifi className="w-4 h-4 text-green-500" />;
+    } else if (connectionMode === 'firebase') {
+      return <Cloud className="w-4 h-4 text-blue-500" />;
+    }
+    return <WifiOff className="w-4 h-4 text-red-500" />;
+  };
+
+  const getConnectionStatusText = () => {
+    if (connectionMode === 'local') {
+      return `Local only${localPeerCount > 0 ? ` (${localPeerCount} peer${localPeerCount > 1 ? 's' : ''})` : ''}`;
+    } else if (connectionMode === 'both') {
+      return `Local${localPeerCount > 0 ? ` (${localPeerCount})` : ''} + Cloud`;
+    } else if (connectionMode === 'firebase') {
+      return 'Cloud only';
+    }
+    return 'Disconnected';
+  };
+
   return (
     <div className="flex flex-col h-screen bg-background">
       <header className="flex items-center justify-between p-4 border-b">
-        <Link href="/" className="flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2">
           <Home className="w-6 h-6 text-primary" />
-          <h1 className="text-2xl font-bold text-primary font-headline">DropCode</h1>
+          <h1 className="text-2xl font-bold text-primary font-headline">DropFile</h1>
         </Link>
-        <div className="flex items-center gap-2">
-          <Users className="text-muted-foreground" />
-          <span className="font-semibold text-lg">Room:</span>
-          <div className="flex items-center gap-2 p-2 rounded-md bg-secondary">
-            <span className="font-mono text-xl font-bold text-primary tracking-widest">{roomCode}</span>
-            <Button variant="ghost" size="icon" onClick={handleCopy} className="w-8 h-8">
-              {hasCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-            </Button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {getConnectionStatusIcon()}
+            <span>{getConnectionStatusText()}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Users className="text-muted-foreground" />
+            <span className="font-semibold text-lg">Room:</span>
+            <div className="flex items-center gap-2 p-2 rounded-md bg-secondary">
+              <span className="font-mono text-xl font-bold text-primary tracking-widest">{roomCode}</span>
+              <Button variant="ghost" size="icon" onClick={handleCopy} className="w-8 h-8">
+                {hasCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -78,11 +111,11 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                   <p className="ml-2 text-muted-foreground">Loading files...</p>
                 </div>
               ) : (
-                <FileList files={files} onDelete={deleteFile} />
+                <FileList files={files} onDelete={deleteFile} onDownload={downloadFile} />
               )}
             </div>
           </div>
-          
+
           <aside className="lg:col-span-1">
             <div className="bg-card p-6 rounded-lg shadow-sm border sticky top-8">
               <h3 className="text-lg font-semibold mb-4">Share this Room</h3>
@@ -91,7 +124,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
               </p>
               {qrCodeUrl && (
                  <div className="flex justify-center">
-                    <Image
+                    <img
                       src={qrCodeUrl}
                       alt="Room QR Code"
                       width={128}
@@ -100,8 +133,16 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                     />
                  </div>
               )}
-              <div className="mt-4 text-center text-sm text-muted-foreground">
-                <p>Files expire 15 minutes after upload.</p>
+              <div className="mt-4 space-y-2">
+                <div className="text-center text-sm text-muted-foreground">
+                  <p>Files expire 15 minutes after upload.</p>
+                </div>
+                {isLocalConnected && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-green-600 bg-green-50 p-2 rounded-md">
+                    <Monitor className="w-4 h-4" />
+                    <span>Local sharing enabled</span>
+                  </div>
+                )}
               </div>
             </div>
           </aside>

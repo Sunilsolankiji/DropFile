@@ -1,4 +1,4 @@
-# **App Name**: DropCode
+# **App Name**: DropFile
 
 ## Core Features:
 
