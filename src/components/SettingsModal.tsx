@@ -23,7 +23,7 @@ export function SettingsModal({ show = false, onHide = () => {} }: SettingsModal
       </Modal.Header>
       <Modal.Body>
         <p className="text-muted">Using backend server for file sharing.</p>
-        <p className="small">Backend URL: {import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}</p>
+        <p className="small">Backend URL: {import.meta.env.BACKEND_URL || 'http://localhost:3001'}</p>
       </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onClick={handleClose}>
