@@ -16,6 +16,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
   const { toast } = useToast();
   const {
     files,
+    uploadingFiles,
     uploadFiles,
     deleteFile,
     downloadFile,
@@ -161,7 +162,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                     </Card.Body>
                   </Card>
                 ) : (
-                  <FileList files={files} onDelete={deleteFile} onDownload={downloadFile} />
+                  <FileList files={files} uploadingFiles={uploadingFiles} onDelete={deleteFile} onDownload={downloadFile} />
                 )}
               </div>
             </Col>

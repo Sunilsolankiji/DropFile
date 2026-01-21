@@ -18,10 +18,18 @@ export interface SharedFile {
   uploadedAt?: number;
 }
 
+export interface UploadingFile {
+  id: string;
+  name: string;
+  size: number;
+  progress: number;
+}
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 export function useRoom(roomCode: string) {
   const [files, setFiles] = useState<SharedFile[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [peers, setPeers] = useState<NetworkPeer[]>([]);
@@ -129,7 +137,25 @@ export function useRoom(roomCode: string) {
 
     try {
       for (const file of filesToUpload) {
-        const success = await serviceRef.current.addFile(file);
+        const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+        // Add to uploading list
+        setUploadingFiles(prev => [...prev, {
+          id: uploadId,
+          name: file.name,
+          size: file.size,
+          progress: 0
+        }]);
+
+        const success = await serviceRef.current.addFile(file, (progress) => {
+          setUploadingFiles(prev =>
+            prev.map(f => f.id === uploadId ? { ...f, progress } : f)
+          );
+        });
+
+        // Remove from uploading list
+        setUploadingFiles(prev => prev.filter(f => f.id !== uploadId));
+
         if (!success) {
           setError(`Failed to upload ${file.name}`);
         }
@@ -183,6 +209,7 @@ export function useRoom(roomCode: string) {
 
   return {
     files,
+    uploadingFiles,
     uploadFiles,
     deleteFile,
     downloadFile,

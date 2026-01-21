@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Card, Button } from 'react-bootstrap';
-import { FileText, Download, Trash2, Clock, Inbox, File, Image, Music, Video, FileArchive, FileCode } from 'lucide-react';
+import { Card, Button, ProgressBar } from 'react-bootstrap';
+import { FileText, Download, Trash2, Clock, Inbox, File, Image, Music, Video, FileArchive, FileCode, Upload } from 'lucide-react';
 import { formatFileSize } from '@/lib/utils';
-import type { SharedFile } from '@/hooks/use-backend-room';
+import type { SharedFile, UploadingFile } from '@/hooks/use-backend-room';
 
 interface FileListProps {
   files: SharedFile[];
+  uploadingFiles?: UploadingFile[];
   onDelete: (fileId: string) => void;
   onDownload?: (fileId: string, fileName: string) => Promise<void>;
 }
@@ -19,6 +20,34 @@ function getFileIcon(type: string) {
   if (type.includes('javascript') || type.includes('typescript') || type.includes('html') || type.includes('css') || type.includes('json')) return FileCode;
   if (type.includes('pdf') || type.includes('document') || type.includes('text')) return FileText;
   return File;
+}
+
+function UploadingFileItem({ file }: { file: UploadingFile }) {
+  return (
+    <div className="file-item d-flex align-items-center uploading">
+      <div className="file-icon me-3">
+        <Upload size={24} style={{ width: 24, height: 24 }} className="pulse-animation text-primary" />
+      </div>
+      <div className="flex-grow-1 overflow-hidden me-3">
+        <div className="d-flex align-items-center gap-2 mb-1">
+          <h6 className="mb-0 text-truncate">{file.name}</h6>
+          <span className="badge bg-warning bg-opacity-10 text-warning d-inline-flex align-items-center gap-1 px-2 py-1" style={{ fontSize: '0.7rem' }}>
+            Uploading
+          </span>
+        </div>
+        <div className="d-flex align-items-center gap-2 mb-2">
+          <small className="text-muted">{formatFileSize(file.size)}</small>
+          <small className="text-primary fw-semibold">{file.progress}%</small>
+        </div>
+        <ProgressBar
+          now={file.progress}
+          variant="primary"
+          animated
+          style={{ height: '4px' }}
+        />
+      </div>
+    </div>
+  );
 }
 
 function FileListItem({
@@ -121,8 +150,10 @@ function FileListItem({
   );
 }
 
-export default function FileList({ files, onDelete, onDownload }: FileListProps) {
-  if (files.length === 0) {
+export default function FileList({ files, uploadingFiles = [], onDelete, onDownload }: FileListProps) {
+  const hasFiles = files.length > 0 || uploadingFiles.length > 0;
+
+  if (!hasFiles) {
     return (
       <Card>
         <Card.Body className="empty-state">
@@ -139,6 +170,11 @@ export default function FileList({ files, onDelete, onDownload }: FileListProps)
   return (
     <Card>
       <Card.Body className="p-3">
+        {/* Show uploading files first */}
+        {uploadingFiles.map(file => (
+          <UploadingFileItem key={file.id} file={file} />
+        ))}
+        {/* Show uploaded files */}
         {files.map(file => (
           <FileListItem key={file.id} file={file} onDelete={onDelete} onDownload={onDownload} />
         ))}

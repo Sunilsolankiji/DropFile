@@ -250,6 +250,16 @@ body {
   border-color: var(--border-color);
 }
 
+.file-item.uploading {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(245, 158, 11, 0.1) 100%);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.file-item.uploading:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0.15) 100%);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
 .file-icon {
   width: 48px;
   height: 48px;

@@ -253,7 +253,7 @@ export class NetworkPeerService {
   /**
    * Add a file to share
    */
-  async addFile(file: File): Promise<NetworkFile | null> {
+  async addFile(file: File, onProgress?: (progress: number) => void): Promise<NetworkFile | null> {
     if (!this.socket) {
       console.error('Not connected to server');
       return null;
@@ -265,8 +265,19 @@ export class NetworkPeerService {
 
         // Convert file to base64
         const reader = new FileReader();
+
+        reader.onprogress = (e) => {
+          if (e.lengthComputable && onProgress) {
+            const progress = Math.round((e.loaded / e.total) * 50); // 0-50% for reading
+            onProgress(progress);
+          }
+        };
+
         reader.onload = (e) => {
           const base64Data = e.target?.result as string;
+
+          // 50% done with reading, now uploading
+          if (onProgress) onProgress(50);
 
           this.socket!.emit(
             'add-file',
@@ -284,6 +295,8 @@ export class NetworkPeerService {
             },
             (response: any) => {
               if (response.success) {
+                if (onProgress) onProgress(100);
+
                 const networkFile: NetworkFile = {
                   id: fileId,
                   name: file.name,
