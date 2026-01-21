@@ -4,7 +4,6 @@ import { Container, Row, Col, Card, Form, Button } from 'react-bootstrap';
 import { ArrowRight, Sparkles, Share2, Zap, Shield } from 'lucide-react';
 import { generateAccessCode } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { SettingsButton } from '@/components/SettingsModal';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -12,9 +11,6 @@ export default function HomePage() {
   const [joinCode, setJoinCode] = useState('');
   const [customCode, setCustomCode] = useState('');
 
-  const handleConfigSaved = () => {
-    // Optional: Handle config save if needed
-  };
 
   const handleCreateRoom = (code: string) => {
     if (code) {
@@ -55,10 +51,6 @@ export default function HomePage() {
 
   return (
     <div className="min-vh-100 d-flex flex-column">
-      {/* Top bar with settings */}
-      <div className="position-absolute top-0 end-0 p-2 p-md-3">
-        <SettingsButton onConfigSaved={handleConfigSaved} />
-      </div>
 
       <Container className="flex-grow-1 d-flex flex-column align-items-center justify-content-center py-4 py-md-5 px-3">
         {/* Hero Section */}

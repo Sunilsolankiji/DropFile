@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Container, Row, Col, Card, Button, Spinner, Badge } from 'react-bootstrap';
+import { Container, Row, Col, Card, Button, Spinner, Badge, Collapse } from 'react-bootstrap';
 import { Copy, Users, Home, Check, WifiOff, Server, QrCode, Clock, Monitor } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import FileList from '@/components/FileList';
 import { useToast } from '@/hooks/use-toast';
 import { useRoom } from '@/hooks/use-backend-room';
-import { SettingsButton } from '@/components/SettingsModal';
 
 type RoomPageProps = {
   roomCode: string;
@@ -29,6 +28,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
   } = useRoom(roomCode);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [hasCopied, setHasCopied] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
   useEffect(() => {
     const url = window.location.href;
@@ -105,30 +105,27 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
       {/* Header */}
       <header className="app-header py-2 py-md-3 px-2 px-md-4">
         <Container fluid>
-          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 gap-md-3">
+          <div className="d-flex justify-content-between align-items-center gap-2">
             <Link to="/" className="d-flex align-items-center gap-2 text-decoration-none">
               <div className="rounded-circle bg-primary bg-opacity-10 p-2 d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}>
                 <Home size={18} style={{ width: 18, height: 18 }} className="text-primary" />
               </div>
-              <span className="app-logo d-none d-sm-inline">DropFile</span>
+              <span className="app-logo">DropFile</span>
             </Link>
 
-            <div className="d-flex align-items-center gap-2 gap-md-3 flex-wrap justify-content-end">
-              <span className="d-none d-md-flex">{getConnectionBadge()}</span>
-
-              <div className="d-flex align-items-center gap-1 gap-md-2">
-                <span className="room-code">{roomCode}</span>
-                <Button
-                  variant={hasCopied ? "success" : "outline-secondary"}
-                  size="sm"
-                  onClick={handleCopy}
-                  className="d-flex align-items-center justify-content-center"
-                  style={{ width: '36px', height: '36px', padding: 0 }}
-                >
-                  {hasCopied ? <Check size={16} style={{ width: 16, height: 16 }} /> : <Copy size={16} style={{ width: 16, height: 16 }} />}
-                </Button>
-                <SettingsButton onConfigSaved={() => window.location.reload()} />
-              </div>
+            <div className="d-flex align-items-center gap-2">
+              <span className="d-none d-md-inline">{getConnectionBadge()}</span>
+              <span className="room-code">{roomCode}</span>
+              <Button
+                variant={hasCopied ? "success" : "outline-secondary"}
+                size="sm"
+                onClick={handleCopy}
+                className="d-flex align-items-center justify-content-center"
+                style={{ width: '36px', height: '36px', padding: 0 }}
+                title="Copy room code"
+              >
+                {hasCopied ? <Check size={16} style={{ width: 16, height: 16 }} /> : <Copy size={16} style={{ width: 16, height: 16 }} />}
+              </Button>
             </div>
           </div>
         </Container>
@@ -138,31 +135,71 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
       <main className="flex-grow-1 py-3 py-md-4">
         <Container>
           <Row className="g-3 g-md-4">
-            {/* Mobile connection status - shown only on mobile */}
+            {/* Mobile connection status & QR - shown only on mobile */}
             <Col xs={12} className="d-lg-none">
-              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 p-2 rounded" style={{ background: 'rgba(255, 255, 255, 0.9)' }}>
-                {isConnected ? (
-                  <span className="status-badge status-local">
-                    <Server size={14} style={{ width: 14, height: 14 }} />
-                    <span>Connected</span>
-                  </span>
-                ) : (
-                  <span className="status-badge status-offline">
-                    <WifiOff size={14} style={{ width: 14, height: 14 }} />
-                    <span>Connecting...</span>
-                  </span>
-                )}
-                {currentPeerName && (
-                  <span className="badge bg-primary bg-opacity-10 text-primary">
-                    <Monitor size={12} style={{ width: 12, height: 12 }} className="me-1" />
-                    {currentPeerName}
-                  </span>
-                )}
-                <span className="badge bg-success bg-opacity-10 text-success">
-                  <Users size={12} style={{ width: 12, height: 12 }} className="me-1" />
-                  {peerCount} device{peerCount !== 1 ? 's' : ''}
-                </span>
-              </div>
+              <Card className="mb-0">
+                <Card.Body className="p-2">
+                  <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                      {isConnected ? (
+                        <span className="status-badge status-local">
+                          <Server size={14} style={{ width: 14, height: 14 }} />
+                          <span>Connected</span>
+                        </span>
+                      ) : (
+                        <span className="status-badge status-offline">
+                          <WifiOff size={14} style={{ width: 14, height: 14 }} />
+                          <span>Connecting...</span>
+                        </span>
+                      )}
+                      {currentPeerName && (
+                        <span className="badge bg-primary bg-opacity-10 text-primary">
+                          <Monitor size={12} style={{ width: 12, height: 12 }} className="me-1" />
+                          {currentPeerName}
+                        </span>
+                      )}
+                      <span className="badge bg-success bg-opacity-10 text-success">
+                        <Users size={12} style={{ width: 12, height: 12 }} className="me-1" />
+                        {peerCount} device{peerCount !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline-primary"
+                      size="sm"
+                      onClick={() => setShowQR(!showQR)}
+                      className="d-flex align-items-center justify-content-center"
+                      style={{ width: '36px', height: '36px', padding: 0 }}
+                      title={showQR ? 'Hide QR Code' : 'Show QR Code'}
+                    >
+                      <QrCode size={16} style={{ width: 16, height: 16 }} />
+                    </Button>
+                  </div>
+
+                  <Collapse in={showQR}>
+                    <div>
+                      <div className="text-center py-2">
+                        <p className="text-muted small mb-2">
+                          Room Code: <strong className="text-primary">{roomCode}</strong>
+                        </p>
+                        {qrCodeUrl && (
+                          <div className="d-inline-block p-2 rounded" style={{ background: 'white' }}>
+                            <img
+                              src={qrCodeUrl}
+                              alt="Room QR Code"
+                              width={120}
+                              height={120}
+                              style={{ display: 'block' }}
+                            />
+                          </div>
+                        )}
+                        <p className="text-muted small mt-2 mb-0">
+                          Scan to join this room
+                        </p>
+                      </div>
+                    </div>
+                  </Collapse>
+                </Card.Body>
+              </Card>
             </Col>
 
             {/* File Upload & List */}

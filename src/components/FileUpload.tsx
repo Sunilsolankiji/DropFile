@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { UploadCloud, FileUp } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -12,6 +12,7 @@ const MAX_FILE_SIZE_MB = 100;
 export default function FileUpload({ onUpload }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -70,26 +71,28 @@ export default function FileUpload({ onUpload }: FileUploadProps) {
     e.target.value = '';
   };
 
+  const handleDropzoneClick = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <div
       onDragEnter={handleDrag}
       onDragOver={handleDrag}
       onDragLeave={handleDrag}
       onDrop={handleDrop}
+      onClick={handleDropzoneClick}
       className={`dropzone ${isDragging ? 'dragging' : ''}`}
+      style={{ cursor: 'pointer' }}
     >
       <input
-        id="file-upload-input"
+        ref={fileInputRef}
         type="file"
         multiple
         className="d-none"
         onChange={handleFileSelect}
       />
-      <label
-        htmlFor="file-upload-input"
-        className="d-flex flex-column align-items-center justify-content-center w-100 h-100 m-0"
-        style={{ cursor: 'pointer' }}
-      >
+      <div className="d-flex flex-column align-items-center justify-content-center w-100 h-100">
         <div className={`dropzone-icon ${isDragging ? 'pulse-animation' : ''}`}>
           {isDragging ? <FileUp size={36} style={{ width: 36, height: 36 }} /> : <UploadCloud size={36} style={{ width: 36, height: 36 }} />}
         </div>
@@ -109,7 +112,7 @@ export default function FileUpload({ onUpload }: FileUploadProps) {
             </span>
           </span>
         </div>
-      </label>
+      </div>
     </div>
   );
 }
