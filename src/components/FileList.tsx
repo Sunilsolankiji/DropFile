@@ -7,6 +7,7 @@ import type { SharedFile, UploadingFile } from '@/hooks/use-backend-room';
 interface FileListProps {
   files: SharedFile[];
   uploadingFiles?: UploadingFile[];
+  currentPeerId?: string | null;
   onDelete: (fileId: string) => void;
   onDownload?: (fileId: string, fileName: string) => Promise<void>;
 }
@@ -52,10 +53,12 @@ function UploadingFileItem({ file }: { file: UploadingFile }) {
 
 function FileListItem({
   file,
+  canDelete,
   onDelete,
   onDownload
 }: {
   file: SharedFile;
+  canDelete: boolean;
   onDelete: (fileId: string) => void;
   onDownload?: (fileId: string, fileName: string) => Promise<void>;
 }) {
@@ -136,21 +139,23 @@ function FileListItem({
         >
           <Download size={16} style={{ width: 16, height: 16 }} className={isDownloading ? 'pulse-animation' : ''} />
         </Button>
-        <Button
-          variant="outline-danger"
-          size="sm"
-          onClick={() => onDelete(file.id)}
-          className="d-flex align-items-center justify-content-center"
-          style={{ width: '36px', height: '36px', padding: 0 }}
-        >
-          <Trash2 size={16} />
-        </Button>
+        {canDelete && (
+          <Button
+            variant="outline-danger"
+            size="sm"
+            onClick={() => onDelete(file.id)}
+            className="d-flex align-items-center justify-content-center"
+            style={{ width: '36px', height: '36px', padding: 0 }}
+          >
+            <Trash2 size={16} />
+          </Button>
+        )}
       </div>
     </div>
   );
 }
 
-export default function FileList({ files, uploadingFiles = [], onDelete, onDownload }: FileListProps) {
+export default function FileList({ files, uploadingFiles = [], currentPeerId, onDelete, onDownload }: FileListProps) {
   const hasFiles = files.length > 0 || uploadingFiles.length > 0;
 
   if (!hasFiles) {
@@ -176,7 +181,13 @@ export default function FileList({ files, uploadingFiles = [], onDelete, onDownl
         ))}
         {/* Show uploaded files */}
         {files.map(file => (
-          <FileListItem key={file.id} file={file} onDelete={onDelete} onDownload={onDownload} />
+          <FileListItem
+            key={file.id}
+            file={file}
+            canDelete={currentPeerId === file.peerId}
+            onDelete={onDelete}
+            onDownload={onDownload}
+          />
         ))}
       </Card.Body>
     </Card>

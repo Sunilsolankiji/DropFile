@@ -34,6 +34,7 @@ export function useRoom(roomCode: string) {
   const [error, setError] = useState<string | null>(null);
   const [peers, setPeers] = useState<NetworkPeer[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [currentPeerId, setCurrentPeerId] = useState<string | null>(null);
 
   const serviceRef = useRef<NetworkPeerService | null>(null);
   const peerNameRef = useRef<string | null>(null);
@@ -102,6 +103,7 @@ export function useRoom(roomCode: string) {
           setIsConnected(connected);
           if (connected) {
             serviceRef.current = service;
+            setCurrentPeerId(service.getPeerId());
             setError(null);
             setLoading(false);
           } else {
@@ -218,6 +220,7 @@ export function useRoom(roomCode: string) {
     peers,
     isConnected,
     peerCount: peers.length,
+    currentPeerId,
     connectionMode: isConnected ? 'backend' : 'offline' as const
   };
 }

@@ -23,7 +23,8 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
     loading,
     error,
     isConnected,
-    peerCount
+    peerCount,
+    currentPeerId
   } = useRoom(roomCode);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [hasCopied, setHasCopied] = useState(false);
@@ -162,7 +163,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                     </Card.Body>
                   </Card>
                 ) : (
-                  <FileList files={files} uploadingFiles={uploadingFiles} onDelete={deleteFile} onDownload={downloadFile} />
+                  <FileList files={files} uploadingFiles={uploadingFiles} currentPeerId={currentPeerId} onDelete={deleteFile} onDownload={downloadFile} />
                 )}
               </div>
             </Col>
