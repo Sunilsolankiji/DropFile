@@ -103,35 +103,31 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
   return (
     <div className="d-flex flex-column min-vh-100">
       {/* Header */}
-      <header className="app-header py-3 px-3 px-md-4">
+      <header className="app-header py-2 py-md-3 px-2 px-md-4">
         <Container fluid>
-          <div className="d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 gap-md-3">
             <Link to="/" className="d-flex align-items-center gap-2 text-decoration-none">
-              <div className="rounded-circle bg-primary bg-opacity-10 p-2 d-flex align-items-center justify-content-center" style={{ width: 40, height: 40 }}>
-                <Home size={20} style={{ width: 20, height: 20 }} className="text-primary" />
+              <div className="rounded-circle bg-primary bg-opacity-10 p-2 d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}>
+                <Home size={18} style={{ width: 18, height: 18 }} className="text-primary" />
               </div>
               <span className="app-logo d-none d-sm-inline">DropFile</span>
             </Link>
 
-            <div className="d-flex align-items-center gap-3">
-              {getConnectionBadge()}
+            <div className="d-flex align-items-center gap-2 gap-md-3 flex-wrap justify-content-end">
+              <span className="d-none d-md-flex">{getConnectionBadge()}</span>
 
-              <div className="d-flex align-items-center gap-2">
-                <Users size={18} style={{ width: 18, height: 18 }} className="text-muted d-none d-sm-inline" />
-                <span className="fw-semibold d-none d-sm-inline">Room:</span>
-                <div className="d-flex align-items-center gap-2">
-                  <span className="room-code">{roomCode}</span>
-                  <Button
-                    variant={hasCopied ? "success" : "outline-secondary"}
-                    size="sm"
-                    onClick={handleCopy}
-                    className="d-flex align-items-center justify-content-center"
-                    style={{ width: '36px', height: '36px', padding: 0 }}
-                  >
-                    {hasCopied ? <Check size={16} style={{ width: 16, height: 16 }} /> : <Copy size={16} style={{ width: 16, height: 16 }} />}
-                  </Button>
-                  <SettingsButton onConfigSaved={() => window.location.reload()} />
-                </div>
+              <div className="d-flex align-items-center gap-1 gap-md-2">
+                <span className="room-code">{roomCode}</span>
+                <Button
+                  variant={hasCopied ? "success" : "outline-secondary"}
+                  size="sm"
+                  onClick={handleCopy}
+                  className="d-flex align-items-center justify-content-center"
+                  style={{ width: '36px', height: '36px', padding: 0 }}
+                >
+                  {hasCopied ? <Check size={16} style={{ width: 16, height: 16 }} /> : <Copy size={16} style={{ width: 16, height: 16 }} />}
+                </Button>
+                <SettingsButton onConfigSaved={() => window.location.reload()} />
               </div>
             </div>
           </div>
@@ -139,11 +135,38 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
       </header>
 
       {/* Main Content */}
-      <main className="flex-grow-1 py-4">
+      <main className="flex-grow-1 py-3 py-md-4">
         <Container>
-          <Row className="g-4">
+          <Row className="g-3 g-md-4">
+            {/* Mobile connection status - shown only on mobile */}
+            <Col xs={12} className="d-lg-none">
+              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 p-2 rounded" style={{ background: 'rgba(255, 255, 255, 0.9)' }}>
+                {isConnected ? (
+                  <span className="status-badge status-local">
+                    <Server size={14} style={{ width: 14, height: 14 }} />
+                    <span>Connected</span>
+                  </span>
+                ) : (
+                  <span className="status-badge status-offline">
+                    <WifiOff size={14} style={{ width: 14, height: 14 }} />
+                    <span>Connecting...</span>
+                  </span>
+                )}
+                {currentPeerName && (
+                  <span className="badge bg-primary bg-opacity-10 text-primary">
+                    <Monitor size={12} style={{ width: 12, height: 12 }} className="me-1" />
+                    {currentPeerName}
+                  </span>
+                )}
+                <span className="badge bg-success bg-opacity-10 text-success">
+                  <Users size={12} style={{ width: 12, height: 12 }} className="me-1" />
+                  {peerCount} device{peerCount !== 1 ? 's' : ''}
+                </span>
+              </div>
+            </Col>
+
             {/* File Upload & List */}
-            <Col lg={8}>
+            <Col lg={8} className="order-2 order-lg-1">
               <FileUpload onUpload={uploadFiles} />
 
               <div className="mt-4">
@@ -169,8 +192,8 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
               </div>
             </Col>
 
-            {/* Sidebar */}
-            <Col lg={4}>
+            {/* Sidebar - hidden on mobile, shown on desktop */}
+            <Col lg={4} className="order-1 order-lg-2 d-none d-lg-block">
               <Card className="sidebar-card">
                 <Card.Body>
                   <div className="d-flex align-items-center gap-2 mb-3">
