@@ -44,8 +44,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          # Optional: Add your Firebase env variables as GitHub Secrets
-          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          VITE_BACKEND_URL: ${{ secrets.VITE_BACKEND_URL }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

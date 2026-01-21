@@ -18,7 +18,7 @@ export interface SharedFile {
   uploadedAt?: number;
 }
 
-const BACKEND_URL = import.meta.env.BACKEND_URL || 'http://localhost:3001';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 export function useRoom(roomCode: string) {
   const [files, setFiles] = useState<SharedFile[]>([]);
