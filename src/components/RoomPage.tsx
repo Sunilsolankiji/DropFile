@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Spinner, Badge } from 'react-bootstrap';
-import { Copy, Users, Home, Check, WifiOff, Server, QrCode, Clock } from 'lucide-react';
+import { Copy, Users, Home, Check, WifiOff, Server, QrCode, Clock, Monitor } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import FileList from '@/components/FileList';
 import { useToast } from '@/hooks/use-toast';
@@ -24,7 +24,8 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
     error,
     isConnected,
     peerCount,
-    currentPeerId
+    currentPeerId,
+    currentPeerName
   } = useRoom(roomCode);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [hasCopied, setHasCopied] = useState(false);
@@ -199,6 +200,16 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                       <div className="text-muted small">Files deleted after 15 minutes</div>
                     </div>
                   </div>
+
+                  {currentPeerName && (
+                    <div className="d-flex align-items-center gap-2 p-3 rounded mb-3" style={{ background: 'rgba(59, 130, 246, 0.1)' }}>
+                      <Monitor size={18} style={{ width: 18, height: 18 }} className="text-primary flex-shrink-0" />
+                      <div>
+                        <div className="small fw-semibold text-primary">Your Device</div>
+                        <div className="text-muted small">{currentPeerName}</div>
+                      </div>
+                    </div>
+                  )}
 
                   {isConnected && (
                     <div className="d-flex align-items-center gap-2 p-3 rounded" style={{ background: 'rgba(16, 185, 129, 0.1)' }}>

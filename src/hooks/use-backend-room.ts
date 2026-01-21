@@ -27,6 +27,29 @@ export interface UploadingFile {
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
+const DEVICE_NAME_KEY = 'dropfile_device_name';
+const DEVICE_ID_KEY = 'dropfile_device_id';
+
+// Get or create a persistent device name
+function getOrCreateDeviceName(): string {
+  let deviceName = localStorage.getItem(DEVICE_NAME_KEY);
+  if (!deviceName) {
+    deviceName = 'Device ' + Math.random().toString(36).substr(2, 5);
+    localStorage.setItem(DEVICE_NAME_KEY, deviceName);
+  }
+  return deviceName;
+}
+
+// Get or create a persistent device ID
+function getOrCreateDeviceId(): string {
+  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+  if (!deviceId) {
+    deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    localStorage.setItem(DEVICE_ID_KEY, deviceId);
+  }
+  return deviceId;
+}
+
 export function useRoom(roomCode: string) {
   const [files, setFiles] = useState<SharedFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
@@ -37,12 +60,8 @@ export function useRoom(roomCode: string) {
   const [currentPeerId, setCurrentPeerId] = useState<string | null>(null);
 
   const serviceRef = useRef<NetworkPeerService | null>(null);
-  const peerNameRef = useRef<string | null>(null);
-
-  // Create stable peer name on first render
-  if (!peerNameRef.current) {
-    peerNameRef.current = 'Device ' + Math.random().toString(36).substr(2, 5);
-  }
+  const peerNameRef = useRef<string>(getOrCreateDeviceName());
+  const deviceIdRef = useRef<string>(getOrCreateDeviceId());
 
   // Initialize backend service
   useEffect(() => {
@@ -61,7 +80,7 @@ export function useRoom(roomCode: string) {
         const service = new NetworkPeerService(
           BACKEND_URL,
           roomCode,
-          peerNameRef.current!,
+          peerNameRef.current,
           {
             onPeersChanged: (newPeers) => {
               if (mounted) {
@@ -95,7 +114,8 @@ export function useRoom(roomCode: string) {
             onFileRemoved: (fileId) => {
               console.log(`File removed: ${fileId}`);
             }
-          }
+          },
+          deviceIdRef.current
         );
 
         const connected = await service.connect();
@@ -221,6 +241,7 @@ export function useRoom(roomCode: string) {
     isConnected,
     peerCount: peers.length,
     currentPeerId,
+    currentPeerName: peerNameRef.current,
     connectionMode: isConnected ? 'backend' : 'offline' as const
   };
 }

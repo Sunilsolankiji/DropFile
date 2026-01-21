@@ -63,9 +63,10 @@ export class NetworkPeerService {
       onPeerLeft?: (peerId: string) => void;
       onFileAdded?: (file: NetworkFile) => void;
       onFileRemoved?: (fileId: string) => void;
-    }
+    },
+    peerId?: string
   ) {
-    this.peerId = this.generatePeerId();
+    this.peerId = peerId || this.generatePeerId();
     this.peerName = peerName || `Device ${this.peerId.slice(0, 6)}`;
     this.roomCode = roomCode;
     this.serverUrl = serverUrl;
