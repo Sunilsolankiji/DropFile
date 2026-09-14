@@ -131,8 +131,12 @@ export function useRoom(roomCode: string) {
             onTextAdded: (text) => {
               setTextMessages(prev => (
                 prev.some(existing => existing.id === text.id)
-                  ? prev
-                  : [...prev, text]
+                  ? prev.map(existing => existing.id === text.id ? { ...text, status: 'sent', showCopyButton: existing.showCopyButton } : existing)
+                  : prev.some(existing => existing.status === 'pending' && existing.text === text.text && existing.peerName === text.peerName)
+                    ? prev.map(existing => existing.status === 'pending' && existing.text === text.text && existing.peerName === text.peerName
+                        ? { ...text, status: 'sent', showCopyButton: existing.showCopyButton }
+                        : existing)
+                    : [...prev, { ...text, status: 'sent' }]
               ));
             }
           },
@@ -256,6 +260,17 @@ export function useRoom(roomCode: string) {
       return;
     }
 
+    const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setTextMessages(prev => [...prev, {
+      id: localId,
+      text,
+      message: text,
+      peerId: currentPeerId || deviceIdRef.current,
+      peerName: peerNameRef.current,
+      createdAt: Date.now(),
+      showCopyButton: true,
+      status: 'pending'
+    }]);
     serviceRef.current.addText(text);
   }, [currentPeerId]);
 

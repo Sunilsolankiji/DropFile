@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Spinner, Badge, Collapse, Form } from 'react-bootstrap';
 import { Copy, Users, Home, Check, WifiOff, Server, QrCode, Clock, Monitor, MessageSquareText, Send, ClipboardCopy, CircleCheckBig, CircleAlert } from 'lucide-react';
@@ -38,6 +38,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
   const [deviceNameInput, setDeviceNameInput] = useState(currentPeerName || '');
   const [isEditingDeviceName, setIsEditingDeviceName] = useState(false);
   const [showCopyOnSent, setShowCopyOnSent] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const url = window.location.href;
     setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`);
@@ -56,6 +57,15 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
   useEffect(() => {
     setDeviceNameInput(currentPeerName || '');
   }, [currentPeerName]);
+
+  useEffect(() => {
+    if (showChat) {
+      const el = chatScrollRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+  }, [textMessages, showChat]);
 
   const handleCopy = async () => {
     try {
@@ -290,6 +300,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                   {showChat ? (
                   <div className="d-flex flex-column gap-3">
                     <div
+                      ref={chatScrollRef}
                       className="rounded p-3 d-flex flex-column gap-2"
                       style={{ minHeight: '260px', maxHeight: '360px', overflowY: 'auto', background: '#f8fafc', border: '1px solid rgba(148, 163, 184, 0.2)' }}
                     >
