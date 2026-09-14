@@ -6,24 +6,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { NetworkPeerService, NetworkPeer, SharedTextMessage } from '@/lib/network-peer-service';
+import { TransferManager } from '@/lib/transfer-manager';
+import { IndexedDbTransferStorage } from '@/lib/transfer-storage';
+import type { ShareMetadata, TransferState } from '@/lib/transfer-types';
 
-export interface SharedFile {
-  id: string;
-  name: string;
-  size: number;
-  type: string;
-  peerId: string;
-  peerName: string;
-  expiresAt: number;
-  uploadedAt?: number;
-}
-
-export interface UploadingFile {
-  id: string;
-  name: string;
-  size: number;
-  progress: number;
-}
+export type SharedFile = ShareMetadata;
 
 export type ChatMessage = SharedTextMessage;
 
@@ -59,7 +46,8 @@ function getOrCreateDeviceId(): string {
 
 export function useRoom(roomCode: string) {
   const [files, setFiles] = useState<SharedFile[]>([]);
-  const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
+  const [transfers, setTransfers] = useState<TransferState[]>([]);
+  const [transferError, setTransferError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [peers, setPeers] = useState<NetworkPeer[]>([]);
@@ -68,6 +56,8 @@ export function useRoom(roomCode: string) {
   const [currentPeerId, setCurrentPeerId] = useState<string | null>(null);
 
   const serviceRef = useRef<NetworkPeerService | null>(null);
+  const managerRef = useRef<TransferManager | null>(null);
+  const transfersRef = useRef<TransferState[]>([]);
   const peerNameRef = useRef<string>(getOrCreateDeviceName());
   const deviceIdRef = useRef<string>(getOrCreateDeviceId());
   const confirmedTextIdsRef = useRef(new Set<string>());
@@ -78,12 +68,22 @@ export function useRoom(roomCode: string) {
     let mounted = true;
     confirmedTextIdsRef.current.clear();
     setFiles([]);
-    setUploadingFiles([]);
+    setTransfers([]);
+    setTransferError(null);
     setTextMessages([]);
     setPeers([]);
     setLoading(true);
     setIsConnected(false);
     setError(null);
+    let serverFiles: ShareMetadata[] = [];
+    let localShares: ShareMetadata[] = [];
+    let manager: TransferManager | null = null;
+    const updateFiles = () => {
+      if (!mounted) return;
+      const merged = new Map(localShares.map(file => [file.id, file]));
+      serverFiles.forEach(file => merged.set(file.id, file));
+      setFiles([...merged.values()]);
+    };
     const service = new NetworkPeerService(
           BACKEND_URL,
           roomCode,
@@ -96,17 +96,9 @@ export function useRoom(roomCode: string) {
             },
             onFilesChanged: (newFiles) => {
               if (mounted) {
-                const sharedFiles: SharedFile[] = newFiles.map(f => ({
-                  id: f.id,
-                  name: f.name,
-                  size: f.size,
-                  type: f.type,
-                  peerId: f.peerId,
-                  peerName: f.peerName,
-                  expiresAt: f.expiresAt,
-                  uploadedAt: f.uploadedAt
-                }));
-                setFiles(sharedFiles);
+                serverFiles = newFiles;
+                manager?.syncFiles(newFiles);
+                updateFiles();
               }
             },
             onTextsChanged: (newTexts) => {
@@ -129,6 +121,8 @@ export function useRoom(roomCode: string) {
               setIsConnected(state === 'connected');
               setLoading(state === 'connecting');
               setError(connectionError || (state === 'disconnected' ? 'Not connected to the room' : null));
+              if (state === 'connected') manager?.removeMissingFiles(service.getFiles());
+              manager?.setConnected(state === 'connected');
             },
             onPeerJoined: (peer) => {
               console.log(`Peer joined: ${peer.name}`);
@@ -140,8 +134,11 @@ export function useRoom(roomCode: string) {
               console.log(`File added: ${file.name}`);
             },
             onFileRemoved: (fileId) => {
-              console.log(`File removed: ${fileId}`);
+              manager?.removeFile(fileId);
             },
+            onTransferUpdated: (update) => manager?.handleUpdate(update),
+            onTransferCompleted: (update) => manager?.handleUpdate(update, true),
+            onTransferError: message => { if (mounted) setTransferError(message); },
             onTextAdded: (text) => {
               if (!mounted) return;
               if (text.peerId === deviceIdRef.current) confirmedTextIdsRef.current.add(text.id);
@@ -155,12 +152,27 @@ export function useRoom(roomCode: string) {
           deviceIdRef.current
         );
 
+    manager = new TransferManager(service, new IndexedDbTransferStorage(), {
+      onChange: (nextTransfers, nextShares) => {
+        if (!mounted) return;
+        transfersRef.current = nextTransfers;
+        setTransfers(nextTransfers);
+        localShares = nextShares;
+        updateFiles();
+      },
+      onError: message => { if (mounted) setTransferError(message); },
+    });
+    managerRef.current = manager;
     serviceRef.current = service;
     setCurrentPeerId(service.getPeerId());
-    void service.connect();
+    void manager.restore()
+      .catch(err => { if (mounted) setTransferError(`Could not restore local transfers: ${err instanceof Error ? err.message : String(err)}`); })
+      .finally(() => { if (mounted) void service.connect(); });
 
     return () => {
       mounted = false;
+      manager?.dispose();
+      if (managerRef.current === manager) managerRef.current = null;
       if (serviceRef.current === service) serviceRef.current = null;
       service.disconnect();
     };
@@ -168,78 +180,57 @@ export function useRoom(roomCode: string) {
 
   // Upload files
   const uploadFiles = useCallback(async (filesToUpload: File[]): Promise<void> => {
-    const service = serviceRef.current;
-    if (!service?.isConnected()) {
+    const manager = managerRef.current;
+    if (!manager || !serviceRef.current?.isConnected()) {
       setError('Not connected to the room');
       return;
     }
-    setError(null);
+    setTransferError(null);
     for (const file of filesToUpload) {
-        if (serviceRef.current !== service) return;
-        const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-        // Add to uploading list
-        setUploadingFiles(prev => [...prev, {
-          id: uploadId,
-          name: file.name,
-          size: file.size,
-          progress: 0
-        }]);
-
-        try {
-          const uploaded = await service.addFile(file, (progress) => {
-            if (serviceRef.current === service) {
-              setUploadingFiles(prev => prev.map(f => f.id === uploadId ? { ...f, progress } : f));
-            }
-          });
-          if (!uploaded) throw new Error('The server did not accept the file');
-        } catch (err) {
-          if (serviceRef.current === service) {
-            setError(`Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Upload failed'}`);
-          }
-        } finally {
-          if (serviceRef.current === service) {
-            setUploadingFiles(prev => prev.filter(f => f.id !== uploadId));
-          }
-        }
+      if (managerRef.current !== manager) return;
+      await manager.upload(file);
     }
   }, []);
 
-  // Download file
-  const downloadFile = useCallback(async (fileId: string, fileName: string): Promise<boolean> => {
-    const service = serviceRef.current;
-    if (!service?.isConnected()) {
-      setError('Not connected to the room');
+  const downloadFile = useCallback(async (fileId: string): Promise<boolean> => {
+    const manager = managerRef.current;
+    const file = files.find(item => item.id === fileId);
+    if (!manager || !file) {
+      setTransferError('This shared file is no longer available.');
       return false;
     }
-    setError(null);
-    try {
-      const blob = await service.downloadFile(fileId);
-      if (serviceRef.current !== service) return false;
-      if (blob) {
-        // Trigger browser download
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        try {
-          a.click();
-        } finally {
-          a.remove();
-          // Allow the browser to consume the URL before releasing it.
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-        }
-        return true;
-      } else {
-        setError('Failed to download file');
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Download failed';
-      if (serviceRef.current === service) setError(errorMsg);
-    }
-    return false;
+    setTransferError(null);
+    return manager.startDownload(file);
+  }, [files]);
+
+  const pauseTransfer = useCallback((transferId: string) => {
+    if (!managerRef.current) { setTransferError('The transfer manager is unavailable. Rejoin the room.'); return; }
+    managerRef.current.pause(transferId);
   }, []);
+
+  const resumeTransfer = useCallback(async (transferId: string) => {
+    if (!managerRef.current) { setTransferError('The transfer manager is unavailable. Rejoin the room.'); return false; }
+    setTransferError(null);
+    return managerRef.current.resume(transferId);
+  }, []);
+
+  const cancelTransfer = useCallback(async (transferId: string) => {
+    if (!managerRef.current) { setTransferError('The transfer manager is unavailable. Rejoin the room.'); return false; }
+    setTransferError(null);
+    return managerRef.current.cancel(transferId);
+  }, []);
+
+  const attachSource = useCallback(async (transferId: string, file: File) => {
+    if (!managerRef.current) { setTransferError('The transfer manager is unavailable. Rejoin the room.'); return false; }
+    setTransferError(null);
+    return managerRef.current.attachSource(transferId, file);
+  }, []);
+
+  const stopFileWork = (fileId: string) => {
+    for (const transfer of transfersRef.current) {
+      if (transfer.fileId === fileId) managerRef.current?.pause(transfer.transferId);
+    }
+  };
 
   // Delete file
   const deleteFile = useCallback(async (fileId: string): Promise<boolean> => {
@@ -250,6 +241,7 @@ export function useRoom(roomCode: string) {
     }
     setError(null);
     try {
+      stopFileWork(fileId);
       const deleted = await service.removeFile(fileId);
       return serviceRef.current === service && deleted;
     } catch (err) {
@@ -349,16 +341,20 @@ export function useRoom(roomCode: string) {
 
   return {
     files,
-    uploadingFiles,
+    transfers,
     uploadFiles,
     deleteFile,
     sendText,
     retryText,
     updateDeviceName,
     downloadFile,
+    pauseTransfer,
+    resumeTransfer,
+    cancelTransfer,
+    attachSource,
     retryConnection,
     loading,
-    error,
+    error: error || transferError,
     peers,
     isConnected,
     peerCount: peers.length,
