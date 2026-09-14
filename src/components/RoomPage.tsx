@@ -39,6 +39,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
   const [isEditingDeviceName, setIsEditingDeviceName] = useState(false);
   const [showCopyOnSent, setShowCopyOnSent] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     const url = window.location.href;
     setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`);
@@ -64,6 +65,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
       if (el) {
         el.scrollTop = el.scrollHeight;
       }
+      chatInputRef.current?.focus();
     }
   }, [textMessages, showChat]);
 
@@ -123,13 +125,11 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
     setIsSending(true);
     sendText(textValue.trim());
     setTextValue('');
-    toast({
-      title: 'Sent!',
-      description: 'Message sent to the room.',
-      variant: 'success'
-    });
     setTimeout(() => {
       setIsSending(false);
+      if (showChat) {
+        chatInputRef.current?.focus();
+      }
     }, 1200);
   };
 
@@ -274,7 +274,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
 
               <Card className="mt-4">
                 <Card.Body>
-                  <div className="d-flex align-items-center justify-content-between gap-2 mb-3">
+                  <div className="d-flex align-items-center justify-content-between gap-2 mb-3 flex-wrap">
                     <div className="d-flex align-items-center gap-2">
                       <MessageSquareText size={18} style={{ width: 18, height: 18 }} className="text-primary" />
                       <h2 className="h5 fw-bold mb-0">Chat</h2>
@@ -298,11 +298,11 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                     </Button>
                   </div>
                   {showChat ? (
-                  <div className="d-flex flex-column gap-3">
+                  <div className="d-flex flex-column gap-2 gap-md-3">
                     <div
                       ref={chatScrollRef}
-                      className="rounded p-3 d-flex flex-column gap-2"
-                      style={{ minHeight: '260px', maxHeight: '360px', overflowY: 'auto', background: '#f8fafc', border: '1px solid rgba(148, 163, 184, 0.2)' }}
+                      className="rounded p-2 p-md-3 d-flex flex-column gap-2"
+                      style={{ minHeight: '240px', maxHeight: '45vh', overflowY: 'auto', background: '#f8fafc', border: '1px solid rgba(148, 163, 184, 0.2)' }}
                     >
                       {textMessages.length === 0 ? (
                         <div className="text-muted small text-center py-5">No messages yet.</div>
@@ -311,7 +311,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                           const isMine = message.peerId === currentPeerId || message.peerName === currentPeerName;
                           return (
                             <div key={message.id} className={`d-flex ${isMine ? 'justify-content-end' : 'justify-content-start'}`}>
-                              <div className={`d-flex align-items-end gap-2 ${isMine ? 'flex-row-reverse' : ''}`} style={{ maxWidth: '78%' }}>
+                              <div className={`d-flex align-items-end gap-2 ${isMine ? 'flex-row-reverse' : ''}`} style={{ maxWidth: 'min(86%, 100%)' }}>
                                 <div
                                   className="px-3 py-2 rounded-4"
                                   style={{
@@ -350,21 +350,28 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                       )}
                     </div>
 
-                    <div className="rounded p-2 d-flex align-items-end gap-2" style={{ background: '#f8fafc', border: '1px solid rgba(148, 163, 184, 0.2)' }}>
+                    <div className="rounded p-2 d-flex align-items-end gap-2 flex-column flex-sm-row" style={{ background: '#f8fafc', border: '1px solid rgba(148, 163, 184, 0.2)' }}>
                       <Form.Control
+                        ref={chatInputRef}
                         as="textarea"
                         rows={1}
                         placeholder="Message"
                         value={textValue}
                         onChange={(e) => setTextValue(e.target.value)}
                         onKeyDown={handleChatKeyDown}
-                        style={{ resize: 'none', border: 'none', boxShadow: 'none', background: 'transparent' }}
+                        onFocus={() => {
+                          if (showChat) {
+                            chatInputRef.current?.focus();
+                          }
+                        }}
+                        style={{ resize: 'none', border: 'none', boxShadow: 'none', background: 'transparent', minHeight: '38px', width: '100%' }}
                       />
                       <Button
                         variant="primary"
                         onClick={handleShareText}
+                        onMouseDown={(e) => e.preventDefault()}
                         disabled={isSending}
-                        className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                        className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0 align-self-end align-self-sm-auto"
                         style={{ width: 40, height: 40, padding: 0 }}
                       >
                         <Send size={16} style={{ width: 16, height: 16 }} />
@@ -432,15 +439,6 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                     </div>
                   )}
 
-                  <Button
-                    variant="outline-primary"
-                    className="w-100 mb-3 d-flex align-items-center justify-content-center gap-2"
-                    onClick={handleShareText}
-                  >
-                    <Send size={16} style={{ width: 16, height: 16 }} />
-                    Share Text
-                  </Button>
-
                   <div className="d-flex align-items-center gap-2 p-3 rounded mb-3" style={{ background: 'rgba(100, 116, 139, 0.1)' }}>
                     <Clock size={18} style={{ width: 18, height: 18 }} className="text-muted flex-shrink-0" />
                     <div>
@@ -450,7 +448,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                   </div>
 
                   {currentPeerName && (
-                    <div className="p-2 rounded mb-3 d-flex align-items-center justify-content-between gap-2" style={{ background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.1)' }}>
+                    <div className="p-2 rounded mb-3 d-flex align-items-center justify-content-between gap-2 flex-wrap" style={{ background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.1)' }}>
                       <div className="d-flex align-items-center gap-2 min-w-0 flex-grow-1">
                         <div className="rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: 28, height: 28 }}>
                           <Monitor size={14} style={{ width: 14, height: 14 }} className="text-primary" />

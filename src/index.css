@@ -334,6 +334,43 @@ body {
   background: transparent;
 }
 
+.toast-container-fixed {
+  position: fixed !important;
+  top: 0.75rem !important;
+  left: 50% !important;
+  transform: translateX(-50%);
+  width: min(100vw - 1rem, 420px);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.toast-container-fixed .toast {
+  pointer-events: auto;
+  animation: toast-in 180ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
 /* Header styling */
 .app-header {
   background: rgba(255, 255, 255, 0.95);

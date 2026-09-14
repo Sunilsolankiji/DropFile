@@ -20,12 +20,16 @@ export function Toaster() {
   const { toasts, dismiss } = useToast();
 
   return (
-    <ToastContainer position="bottom-end" className="p-3" style={{ zIndex: 1050 }}>
+    <ToastContainer
+      position="top-center"
+      className="p-3 toast-container-fixed"
+      style={{ zIndex: 9999 }}
+    >
       {toasts.map((t) => (
         <Toast
           key={t.id}
           onClose={() => dismiss(t.id)}
-          className="border-0"
+          className="border-0 toast-animated"
           style={{
             minWidth: '300px',
             boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
