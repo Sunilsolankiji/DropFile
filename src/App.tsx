@@ -5,7 +5,7 @@ import { Toaster } from './components/Toaster'
 
 function RoomPageWrapper() {
   const { code } = useParams<{ code: string }>()
-  return <RoomPage roomCode={code || ''} />
+  return <RoomPage key={code} roomCode={code || ''} />
 }
 
 function App() {

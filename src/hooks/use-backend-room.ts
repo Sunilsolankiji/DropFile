@@ -28,7 +28,6 @@ export interface UploadingFile {
 export type ChatMessage = SharedTextMessage;
 
 export type ChatMessageWithMeta = ChatMessage & {
-  showCopyButton?: boolean;
   status?: 'pending' | 'sent' | 'failed';
   message?: string;
 };
@@ -71,22 +70,21 @@ export function useRoom(roomCode: string) {
   const serviceRef = useRef<NetworkPeerService | null>(null);
   const peerNameRef = useRef<string>(getOrCreateDeviceName());
   const deviceIdRef = useRef<string>(getOrCreateDeviceId());
+  const confirmedTextIdsRef = useRef(new Set<string>());
+  const pendingTextIdsRef = useRef(new Set<string>());
 
   // Initialize backend service
   useEffect(() => {
     let mounted = true;
-
-    // Skip if already connected to this room
-    if (serviceRef.current && isConnected) {
-      console.log('Already connected to room, skipping');
-      return;
-    }
-
-    const initService = async () => {
-      try {
-        console.log(`Connecting to backend: ${BACKEND_URL}`);
-
-        const service = new NetworkPeerService(
+    confirmedTextIdsRef.current.clear();
+    setFiles([]);
+    setUploadingFiles([]);
+    setTextMessages([]);
+    setPeers([]);
+    setLoading(true);
+    setIsConnected(false);
+    setError(null);
+    const service = new NetworkPeerService(
           BACKEND_URL,
           roomCode,
           peerNameRef.current,
@@ -113,8 +111,24 @@ export function useRoom(roomCode: string) {
             },
             onTextsChanged: (newTexts) => {
               if (mounted) {
-                setTextMessages(newTexts);
+                newTexts.forEach(text => {
+                  if (text.peerId === deviceIdRef.current) confirmedTextIdsRef.current.add(text.id);
+                });
+                setTextMessages(previous => {
+                  const receivedIds = new Set(newTexts.map(text => text.id));
+                  const received = newTexts.map(text => {
+                    const existing = previous.find(message => message.id === text.id);
+                    return { ...existing, ...text, status: 'sent' as const };
+                  });
+                  return [...received, ...previous.filter(text => !receivedIds.has(text.id))];
+                });
               }
+            },
+            onConnectionChanged: (state, connectionError) => {
+              if (!mounted) return;
+              setIsConnected(state === 'connected');
+              setLoading(state === 'connecting');
+              setError(connectionError || (state === 'disconnected' ? 'Not connected to the room' : null));
             },
             onPeerJoined: (peer) => {
               console.log(`Peer joined: ${peer.name}`);
@@ -129,61 +143,39 @@ export function useRoom(roomCode: string) {
               console.log(`File removed: ${fileId}`);
             },
             onTextAdded: (text) => {
-              setTextMessages(prev => (
-                prev.some(existing => existing.id === text.id)
-                  ? prev.map(existing => existing.id === text.id ? { ...text, status: 'sent', showCopyButton: existing.showCopyButton } : existing)
-                  : prev.some(existing => existing.status === 'pending' && existing.text === text.text && existing.peerName === text.peerName)
-                    ? prev.map(existing => existing.status === 'pending' && existing.text === text.text && existing.peerName === text.peerName
-                        ? { ...text, status: 'sent', showCopyButton: existing.showCopyButton }
-                        : existing)
-                    : [...prev, { ...text, status: 'sent' }]
-              ));
+              if (!mounted) return;
+              if (text.peerId === deviceIdRef.current) confirmedTextIdsRef.current.add(text.id);
+              setTextMessages(prev => prev.some(existing => existing.id === text.id)
+                ? prev.map(existing => existing.id === text.id
+                  ? { ...existing, ...text, status: 'sent' }
+                  : existing)
+                : [...prev, { ...text, status: 'sent' }]);
             }
           },
           deviceIdRef.current
         );
 
-        const connected = await service.connect();
-        if (mounted) {
-          setIsConnected(connected);
-          if (connected) {
-            serviceRef.current = service;
-            setCurrentPeerId(service.getPeerId());
-            setError(null);
-            setLoading(false);
-          } else {
-            setError('Failed to connect to backend server');
-            setLoading(false);
-          }
-        }
-      } catch (err) {
-        if (mounted) {
-          const errorMsg = err instanceof Error ? err.message : 'Connection failed';
-          console.error('Backend connection error:', err);
-          setError(`Cannot connect to backend: ${errorMsg}`);
-          setLoading(false);
-        }
-      }
-    };
-
-    initService();
+    serviceRef.current = service;
+    setCurrentPeerId(service.getPeerId());
+    void service.connect();
 
     return () => {
       mounted = false;
-      // Don't disconnect immediately - let the service persist
-      // Only disconnect when component fully unmounts or room changes
+      if (serviceRef.current === service) serviceRef.current = null;
+      service.disconnect();
     };
   }, [roomCode]);
 
   // Upload files
-  const uploadFiles = useCallback(async (filesToUpload: File[]) => {
-    if (!serviceRef.current) {
-      setError('Not connected to backend');
+  const uploadFiles = useCallback(async (filesToUpload: File[]): Promise<void> => {
+    const service = serviceRef.current;
+    if (!service?.isConnected()) {
+      setError('Not connected to the room');
       return;
     }
-
-    try {
-      for (const file of filesToUpload) {
+    setError(null);
+    for (const file of filesToUpload) {
+        if (serviceRef.current !== service) return;
         const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
         // Add to uploading list
@@ -194,100 +186,166 @@ export function useRoom(roomCode: string) {
           progress: 0
         }]);
 
-        const success = await serviceRef.current.addFile(file, (progress) => {
-          setUploadingFiles(prev =>
-            prev.map(f => f.id === uploadId ? { ...f, progress } : f)
-          );
-        });
-
-        // Remove from uploading list
-        setUploadingFiles(prev => prev.filter(f => f.id !== uploadId));
-
-        if (!success) {
-          setError(`Failed to upload ${file.name}`);
+        try {
+          const uploaded = await service.addFile(file, (progress) => {
+            if (serviceRef.current === service) {
+              setUploadingFiles(prev => prev.map(f => f.id === uploadId ? { ...f, progress } : f));
+            }
+          });
+          if (!uploaded) throw new Error('The server did not accept the file');
+        } catch (err) {
+          if (serviceRef.current === service) {
+            setError(`Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Upload failed'}`);
+          }
+        } finally {
+          if (serviceRef.current === service) {
+            setUploadingFiles(prev => prev.filter(f => f.id !== uploadId));
+          }
         }
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Upload failed';
-      setError(errorMsg);
     }
   }, []);
 
   // Download file
-  const downloadFile = useCallback(async (fileId: string, fileName: string) => {
-    if (!serviceRef.current) {
-      setError('Not connected to backend');
-      return;
+  const downloadFile = useCallback(async (fileId: string, fileName: string): Promise<boolean> => {
+    const service = serviceRef.current;
+    if (!service?.isConnected()) {
+      setError('Not connected to the room');
+      return false;
     }
-
+    setError(null);
     try {
-      const blob = await serviceRef.current.downloadFile(fileId);
+      const blob = await service.downloadFile(fileId);
+      if (serviceRef.current !== service) return false;
       if (blob) {
         // Trigger browser download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = fileName;
-        a.click();
-        URL.revokeObjectURL(url);
+        document.body.appendChild(a);
+        try {
+          a.click();
+        } finally {
+          a.remove();
+          // Allow the browser to consume the URL before releasing it.
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+        return true;
       } else {
         setError('Failed to download file');
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Download failed';
-      setError(errorMsg);
+      if (serviceRef.current === service) setError(errorMsg);
     }
+    return false;
   }, []);
 
   // Delete file
-  const deleteFile = useCallback((fileId: string) => {
-    if (!serviceRef.current) {
-      setError('Not connected to backend');
-      return;
+  const deleteFile = useCallback(async (fileId: string): Promise<boolean> => {
+    const service = serviceRef.current;
+    if (!service?.isConnected()) {
+      setError('Not connected to the room');
+      return false;
     }
-
+    setError(null);
     try {
-      serviceRef.current.removeFile(fileId);
+      const deleted = await service.removeFile(fileId);
+      return serviceRef.current === service && deleted;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Delete failed';
-      setError(errorMsg);
+      if (serviceRef.current === service) setError(errorMsg);
+      return false;
     }
   }, []);
 
-  const sendText = useCallback((text: string) => {
-    if (!serviceRef.current) {
-      setError('Not connected to backend');
-      return;
+  const sendText = useCallback(async (text: string, retryMessageId?: string): Promise<boolean> => {
+    const service = serviceRef.current;
+    if (!service?.isConnected()) {
+      setError('Not connected to the room');
+      return false;
     }
-
-    const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    setTextMessages(prev => [...prev, {
+    const retryMessage = retryMessageId
+      ? textMessages.find(message => message.id === retryMessageId && message.peerId === currentPeerId)
+      : undefined;
+    if (retryMessageId && (!retryMessage || retryMessage.status !== 'failed')) {
+      setError('Only your failed messages can be retried');
+      return false;
+    }
+    const messageText = retryMessage ? retryMessage.text || retryMessage.message || '' : text;
+    if (!messageText.trim()) {
+      setError('Message cannot be empty');
+      return false;
+    }
+    setError(null);
+    // Use the same identity for the optimistic row, wire payload and acknowledgement.
+    const localId = retryMessage?.id || `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    if (pendingTextIdsRef.current.has(localId)) return false;
+    pendingTextIdsRef.current.add(localId);
+    const createdAt = retryMessage?.createdAt ?? Date.now();
+    setTextMessages(prev => retryMessage
+      ? prev.map(message => message.id === localId ? { ...message, status: 'pending' } : message)
+      : [...prev, {
       id: localId,
-      text,
-      message: text,
+      text: messageText,
+      message: messageText,
       peerId: currentPeerId || deviceIdRef.current,
       peerName: peerNameRef.current,
-      createdAt: Date.now(),
-      showCopyButton: true,
+      createdAt,
       status: 'pending'
     }]);
-    serviceRef.current.addText(text);
-  }, [currentPeerId]);
+    try {
+      const sent = await service.addText(messageText, localId, createdAt);
+      if (serviceRef.current !== service) return false;
+      setTextMessages(prev => {
+        const optimistic = prev.find(message => message.id === localId);
+        const confirmed: ChatMessageWithMeta = { ...optimistic, ...sent, status: 'sent' };
+        const withoutDuplicate = prev.filter(message => message.id !== sent.id || message.id === localId);
+        return optimistic
+          ? withoutDuplicate.map(message => message.id === localId ? confirmed : message)
+          : [...withoutDuplicate, confirmed];
+      });
+      return true;
+    } catch (err) {
+      if (serviceRef.current === service) {
+        if (confirmedTextIdsRef.current.has(localId)) return true;
+        setTextMessages(prev => prev.map(message =>
+          message.id === localId && message.status !== 'sent' ? { ...message, status: 'failed' } : message
+        ));
+        setError(err instanceof Error ? err.message : 'Message could not be sent');
+      }
+      return false;
+    } finally {
+      pendingTextIdsRef.current.delete(localId);
+    }
+  }, [currentPeerId, textMessages]);
 
-  const updateDeviceName = useCallback((name: string) => {
+  const retryText = useCallback((messageId: string) => sendText('', messageId), [sendText]);
+
+  const updateDeviceName = useCallback((name: string): boolean => {
     const trimmed = name.trim();
     if (!trimmed) {
       setError('Device name cannot be empty');
-      return;
+      return false;
     }
 
-    peerNameRef.current = trimmed;
-    localStorage.setItem(DEVICE_NAME_KEY, trimmed);
-    if (serviceRef.current) {
-      serviceRef.current.updatePeerName(trimmed);
+    try {
+      localStorage.setItem(DEVICE_NAME_KEY, trimmed);
+      peerNameRef.current = trimmed;
+      serviceRef.current?.updatePeerName(trimmed);
+      setPeers(prev => prev.map(peer => (peer.id === currentPeerId ? { ...peer, name: trimmed } : peer)));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the device name');
+      return false;
     }
-    setPeers(prev => prev.map(peer => (peer.id === currentPeerId ? { ...peer, name: trimmed } : peer)));
   }, [currentPeerId]);
+
+  const retryConnection = useCallback(async (): Promise<boolean> => {
+    const service = serviceRef.current;
+    if (!service) return false;
+    return service.connect();
+  }, []);
 
   return {
     files,
@@ -295,8 +353,10 @@ export function useRoom(roomCode: string) {
     uploadFiles,
     deleteFile,
     sendText,
+    retryText,
     updateDeviceName,
     downloadFile,
+    retryConnection,
     loading,
     error,
     peers,

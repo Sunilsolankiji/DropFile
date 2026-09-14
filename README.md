@@ -6,16 +6,18 @@ A modern React + Vite application for instant file sharing via access codes. Sha
 
 ## ✨ Features
 
-- **Create Spaces**: Generate random access codes or use custom memorable codes
-- **Join Spaces**: Enter an access code to join an existing file sharing room
-- **Drag & Drop Upload**: Easy file upload with drag-and-drop or file browser
+- **Create Rooms**: Start sharing in one click, or expand "Use a custom code" for a memorable code
+- **Join Rooms**: Enter an access code to join an existing file sharing room
+- **Drag & Drop Upload**: Drop files or use the keyboard-accessible file picker (up to 10 files at a time, 100 MB per file)
 - **Cross-Device Sharing**: Share files between any devices connected to the same backend
 - **Real-time Updates**: Files sync instantly across all connected clients via Socket.IO
 - **Auto-expiry**: Files automatically expire after a set period
-- **QR Code Sharing**: Quickly share room links via QR code for easy mobile access
+- **QR Code Sharing**: Open "Share room" to copy a code/link or scan a locally generated QR code; room links are not sent to a QR service
 - **Connection Status**: Visual indicators show backend connection status
 - **Peer Visibility**: See how many devices are connected to the room
 - **Persistent Device Identity**: Your device name and ID are remembered across sessions
+- **Room Chat**: Share links and notes in a side panel on desktop or a full-width panel on mobile, without losing your draft when closing it
+- **Accessible Interactions**: Clear focus indicators, labeled controls, reduced-motion support, and a responsive file-first layout
 
 ## 🚀 Getting Started
 
@@ -85,6 +87,15 @@ DropFile uses a client-server architecture with Socket.IO for real-time communic
 3. **Real-time Sync**: Backend notifies all devices in the room
 4. **Download**: Device B can download the file from the backend
 
+Use **Share room** for the room code, link, QR code, and device renaming on any screen size.
+**Chat** opens separately from your files and shows an unread indicator for incoming messages.
+Press **Ctrl+Enter** (or **Cmd+Enter**) to send a message; Enter adds a new line.
+Files display their remaining availability, and removing your own file requires confirmation.
+Connection and action failures are shown explicitly; unsuccessful chat sends keep your draft.
+Outgoing messages use a clock while sending, a check when accepted, and a warning with a Retry action on failure.
+Retry resends the existing message without adding another chat bubble; delivery and read receipts are not tracked.
+Web addresses in chat are clickable and open in a new tab. Message text and line breaks are preserved.
+
 ### Cross-Device Sharing
 
 Works across:
@@ -108,6 +119,9 @@ DropFile/
 │   │   ├── RoomPage.tsx      # File sharing room interface
 │   │   ├── FileUpload.tsx    # Drag & drop file upload
 │   │   ├── FileList.tsx      # List of shared files
+│   │   ├── AppHeader.tsx     # Shared navigation and branding
+│   │   ├── ChatPanel.tsx     # Room messages and composer
+│   │   ├── ShareRoomModal.tsx # Code, local QR, and device identity
 │   │   └── ...
 │   ├── hooks/            # Custom React hooks
 │   │   ├── use-backend-room.ts   # Room state management
@@ -135,10 +149,10 @@ DropFile/
 ## 🎨 Tech Stack
 
 - **Frontend**: React 18, TypeScript, Vite
-- **UI**: React Bootstrap, Bootstrap 5, Lucide Icons
+- **UI**: React Bootstrap, Bootstrap 5, Lucide Icons, locally generated QR codes
 - **Routing**: React Router DOM v6
 - **Real-time**: Socket.IO Client
-- **Styling**: CSS with Bootstrap theming
+- **Styling**: Token-based CSS with Bootstrap theming, system fonts, and reduced-motion support
 
 ## 📝 License
 

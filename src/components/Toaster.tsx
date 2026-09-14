@@ -20,29 +20,21 @@ export function Toaster() {
   const { toasts, dismiss } = useToast();
 
   return (
-    <ToastContainer
-      position="top-center"
-      className="p-3 toast-container-fixed"
-      style={{ zIndex: 9999 }}
-    >
+    <ToastContainer className="toast-container-fixed" aria-live="polite" aria-atomic="false">
       {toasts.map((t) => (
         <Toast
           key={t.id}
           onClose={() => dismiss(t.id)}
-          className="border-0 toast-animated"
-          style={{
-            minWidth: '300px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
-          }}
+          role={t.variant === 'danger' ? 'alert' : 'status'}
         >
-          <Toast.Header className="border-0 pb-0">
-            <div className="d-flex align-items-center gap-2 me-auto">
+          <Toast.Header>
+            <div className="toast-title">
               {getToastIcon(t.variant)}
               <strong>{t.title}</strong>
             </div>
           </Toast.Header>
           {t.description && (
-            <Toast.Body className="pt-1 text-muted">{t.description}</Toast.Body>
+            <Toast.Body>{t.description}</Toast.Body>
           )}
         </Toast>
       ))}

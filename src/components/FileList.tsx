@@ -1,195 +1,152 @@
-import { useState, useEffect } from 'react';
-import { Card, Button, ProgressBar } from 'react-bootstrap';
-import { FileText, Download, Trash2, Clock, Inbox, File, Image, Music, Video, FileArchive, FileCode, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Button, Modal, ProgressBar, Spinner } from 'react-bootstrap';
+import { Download, File, FileArchive, FileCode, FileText, Image, Inbox, Music, Trash2, Video } from 'lucide-react';
 import { formatFileSize } from '@/lib/utils';
 import type { SharedFile, UploadingFile } from '@/hooks/use-backend-room';
 
 interface FileListProps {
   files: SharedFile[];
-  uploadingFiles?: UploadingFile[];
-  currentPeerId?: string | null;
-  onDelete: (fileId: string) => void;
-  onDownload?: (fileId: string, fileName: string) => Promise<void>;
+  uploadingFiles: UploadingFile[];
+  currentPeerId: string | null;
+  disabled: boolean;
+  onDelete: (fileId: string) => boolean | void | Promise<boolean | void>;
+  onDownload: (fileId: string, fileName: string) => Promise<boolean>;
 }
 
-// Get icon based on file type
 function getFileIcon(type: string) {
   if (type.startsWith('image/')) return Image;
   if (type.startsWith('video/')) return Video;
   if (type.startsWith('audio/')) return Music;
-  if (type.includes('zip') || type.includes('rar') || type.includes('tar') || type.includes('gz')) return FileArchive;
-  if (type.includes('javascript') || type.includes('typescript') || type.includes('html') || type.includes('css') || type.includes('json')) return FileCode;
-  if (type.includes('pdf') || type.includes('document') || type.includes('text')) return FileText;
+  if (/zip|rar|tar|gz/.test(type)) return FileArchive;
+  if (/javascript|typescript|html|css|json/.test(type)) return FileCode;
+  if (/pdf|document|text/.test(type)) return FileText;
   return File;
 }
 
-function UploadingFileItem({ file }: { file: UploadingFile }) {
-  return (
-    <div className="file-item d-flex align-items-center uploading">
-      <div className="file-icon me-3">
-        <Upload size={24} style={{ width: 24, height: 24 }} className="pulse-animation text-primary" />
-      </div>
-      <div className="flex-grow-1 overflow-hidden me-3">
-        <div className="d-flex align-items-center gap-2 mb-1">
-          <h6 className="mb-0 text-truncate">{file.name}</h6>
-          <span className="badge bg-warning bg-opacity-10 text-warning d-inline-flex align-items-center gap-1 px-2 py-1" style={{ fontSize: '0.7rem' }}>
-            Uploading
-          </span>
-        </div>
-        <div className="d-flex align-items-center gap-2 mb-2">
-          <small className="text-muted">{formatFileSize(file.size)}</small>
-          <small className="text-primary fw-semibold">{file.progress}%</small>
-        </div>
-        <ProgressBar
-          now={file.progress}
-          variant="primary"
-          animated
-          style={{ height: '4px' }}
-        />
-      </div>
-    </div>
-  );
+function expiryLabel(expiresAt: number, now: number) {
+  const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
+  if (!seconds) return 'Expired';
+  if (seconds < 60) return 'Expires in less than a minute';
+  const minutes = Math.ceil(seconds / 60);
+  return `Expires in ${minutes} min`;
 }
 
-function FileListItem({
-  file,
-  canDelete,
-  onDelete,
-  onDownload
-}: {
+function FileRow({ file, now, canDelete, disabled, onDownload, onDelete }: {
   file: SharedFile;
+  now: number;
   canDelete: boolean;
-  onDelete: (fileId: string) => void;
-  onDownload?: (fileId: string, fileName: string) => Promise<void>;
+  disabled: boolean;
+  onDownload: FileListProps['onDownload'];
+  onDelete: (trigger: HTMLButtonElement) => void;
 }) {
-  const [timeLeft, setTimeLeft] = useState('');
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const Icon = getFileIcon(file.type);
+  const expired = file.expiresAt <= now;
 
-  useEffect(() => {
-    const calculateTimeLeft = () => {
-      const now = Date.now();
-      const expiryTime = file.expiresAt; // Already a timestamp in milliseconds
-      const distance = expiryTime - now;
-
-      if (distance < 0) {
-        setTimeLeft('Expired');
-        return null;
-      }
-
-      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-      setTimeLeft(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
-      return distance;
-    };
-
-    const initialDistance = calculateTimeLeft();
-    if (initialDistance === null) return;
-
-    const interval = setInterval(() => {
-      if (calculateTimeLeft() === null) {
-        clearInterval(interval);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [file.expiresAt]);
-
-  const handleDownload = async () => {
-    if (onDownload) {
-      setIsDownloading(true);
-      try {
-        await onDownload(file.id, file.name);
-      } finally {
-        setIsDownloading(false);
-      }
+  const download = async () => {
+    setDownloading(true);
+    try {
+      await onDownload(file.id, file.name);
+    } finally {
+      setDownloading(false);
     }
   };
 
-  const FileIcon = getFileIcon(file.type);
-
   return (
-    <div className="file-item d-flex align-items-center">
-      <div className="file-icon me-3">
-        <FileIcon size={24} style={{ width: 24, height: 24 }} />
-      </div>
-      <div className="flex-grow-1 overflow-hidden me-3">
-        <div className="d-flex align-items-center gap-2 mb-1">
-          <h6 className="mb-0">{file.name}</h6>
-          <span title="Backend file" className="badge bg-primary bg-opacity-10 text-primary d-inline-flex align-items-center gap-1 px-2 py-1" style={{ fontSize: '0.7rem' }}>
-            Backend
-          </span>
-        </div>
-        <div className="d-flex align-items-center gap-2">
-          <small>{file.peerName}</small>
-          <span className="file-size">{formatFileSize(file.size)}</span>
+    <li className="file-item">
+      <span className="file-icon"><Icon size={21} aria-hidden="true" /></span>
+      <div className="file-info">
+        <h3 className="file-name">{file.name}</h3>
+        <div className="file-metadata">
+          <span>{formatFileSize(file.size)}</span>
+          <span>{canDelete ? 'You' : file.peerName}</span>
+          <span className={expired ? 'text-danger' : ''}>{expiryLabel(file.expiresAt, now)}</span>
         </div>
       </div>
-      <div className="d-flex align-items-center gap-2">
-        <span className={`time-badge d-flex align-items-center gap-1 ${timeLeft === 'Expired' ? 'expired' : ''}`}>
-          <Clock size={14} style={{ width: 14, height: 14 }} />
-          {timeLeft}
-        </span>
+      <div className="file-actions">
         <Button
+          className="icon-button"
           variant="outline-secondary"
-          size="sm"
-          onClick={handleDownload}
-          disabled={isDownloading}
-          className="d-flex align-items-center justify-content-center"
-          style={{ width: '36px', height: '36px', padding: 0 }}
+          onClick={download}
+          disabled={disabled || downloading || expired}
+          aria-label={`${downloading ? 'Downloading' : 'Download'} ${file.name}`}
+          title={downloading ? 'Downloading...' : 'Download file'}
         >
-          <Download size={16} style={{ width: 16, height: 16 }} className={isDownloading ? 'pulse-animation' : ''} />
+          {downloading ? <Spinner animation="border" size="sm" aria-hidden="true" /> : <Download size={17} aria-hidden="true" />}
         </Button>
-        {canDelete && (
-          <Button
-            variant="outline-danger"
-            size="sm"
-            onClick={() => onDelete(file.id)}
-            className="d-flex align-items-center justify-content-center"
-            style={{ width: '36px', height: '36px', padding: 0 }}
-          >
-            <Trash2 size={16} />
-          </Button>
-        )}
+        {canDelete && <Button variant="link" className="icon-button delete-button" onClick={(event) => onDelete(event.currentTarget)} disabled={disabled || expired} aria-label={`Remove ${file.name}`} title="Remove file"><Trash2 size={16} aria-hidden="true" /></Button>}
       </div>
-    </div>
+    </li>
   );
 }
 
-export default function FileList({ files, uploadingFiles = [], currentPeerId, onDelete, onDownload }: FileListProps) {
-  const hasFiles = files.length > 0 || uploadingFiles.length > 0;
+export default function FileList({ files, uploadingFiles, currentPeerId, disabled, onDelete, onDownload }: FileListProps) {
+  const [now, setNow] = useState(Date.now);
+  const [fileToDelete, setFileToDelete] = useState<SharedFile | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const deleteTrigger = useRef<HTMLButtonElement | null>(null);
 
-  if (!hasFiles) {
-    return (
-      <Card>
-        <Card.Body className="empty-state">
-          <div className="empty-state-icon">
-            <Inbox size={48} />
-          </div>
-          <h5>No files yet</h5>
-          <p className="mb-0">Upload some files to get started sharing!</p>
-        </Card.Body>
-      </Card>
-    );
-  }
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const remove = async () => {
+    if (!fileToDelete) return;
+    setDeleting(true);
+    try {
+      const result = await onDelete(fileToDelete.id);
+      if (result !== false) setFileToDelete(null);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
-    <Card>
-      <Card.Body className="p-3">
-        {/* Show uploading files first */}
-        {uploadingFiles.map(file => (
-          <UploadingFileItem key={file.id} file={file} />
-        ))}
-        {/* Show uploaded files */}
-        {files.map(file => (
-          <FileListItem
-            key={file.id}
-            file={file}
-            canDelete={currentPeerId === file.peerId}
-            onDelete={onDelete}
-            onDownload={onDownload}
-          />
-        ))}
-      </Card.Body>
-    </Card>
+    <>
+      {!files.length && !uploadingFiles.length ? (
+        <div className="files-surface empty-state">
+          <Inbox size={32} strokeWidth={1.4} aria-hidden="true" />
+          <h3>Your files will land here</h3>
+          <p>Add a file above, or share the room code so another device can send one to you.</p>
+        </div>
+      ) : (
+      <div className="files-surface">
+        <ul className="file-list" aria-label="Shared files and uploads">
+          {uploadingFiles.map(file => (
+            <li key={file.id} className="file-item">
+              <span className="file-icon"><File size={21} aria-hidden="true" /></span>
+              <div className="file-info">
+                <h3 className="file-name">{file.name}</h3>
+                <div className="file-metadata"><span>{formatFileSize(file.size)}</span><span className="upload-label">{file.progress >= 100 ? 'Finishing upload...' : file.progress < 50 ? 'Preparing file...' : 'Uploading...'}</span></div>
+                <ProgressBar className="upload-progress" now={file.progress} aria-label={`Sharing ${file.name}`} aria-valuetext={file.progress < 50 ? 'Preparing file' : 'Waiting for server confirmation'} />
+              </div>
+            </li>
+          ))}
+          {files.map(file => (
+            <FileRow key={file.id} file={file} now={now} canDelete={file.peerId === currentPeerId} disabled={disabled} onDownload={onDownload} onDelete={(trigger) => { deleteTrigger.current = trigger; setFileToDelete(file); }} />
+          ))}
+        </ul>
+      </div>
+      )}
+      <Modal
+        show={!!fileToDelete}
+        onHide={() => { if (!deleting) setFileToDelete(null); }}
+        onExited={() => {
+          const target = deleteTrigger.current?.isConnected ? deleteTrigger.current : document.getElementById('files-title');
+          target?.focus();
+        }}
+        restoreFocus={false}
+        centered
+        aria-labelledby="remove-title"
+      >
+        <Modal.Header closeButton={!deleting}><Modal.Title id="remove-title">Remove this file?</Modal.Title></Modal.Header>
+        <Modal.Body><p className="share-intro mb-0"><strong>{fileToDelete?.name}</strong> will no longer be available in this room. Files already downloaded won't be affected.</p></Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" disabled={deleting} onClick={() => setFileToDelete(null)}>Keep file</Button>
+          <Button variant="danger" disabled={disabled || deleting} onClick={remove}>{deleting ? 'Removing...' : 'Remove file'}</Button>
+        </Modal.Footer>
+      </Modal>
+    </>
   );
 }

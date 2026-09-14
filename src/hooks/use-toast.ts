@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useSyncExternalStore } from 'react';
 
 export interface ToastMessage {
   id: string;
@@ -7,11 +7,11 @@ export interface ToastMessage {
   variant?: 'success' | 'danger' | 'warning' | 'info';
 }
 
-let toastListeners: ((toasts: ToastMessage[]) => void)[] = [];
+let toastListeners: (() => void)[] = [];
 let toasts: ToastMessage[] = [];
 
 function notifyListeners() {
-  toastListeners.forEach(listener => listener([...toasts]));
+  toastListeners.forEach(listener => listener());
 }
 
 export function toast({ title, description, variant = 'info' }: Omit<ToastMessage, 'id'>) {
@@ -29,30 +29,26 @@ export function toast({ title, description, variant = 'info' }: Omit<ToastMessag
   return id;
 }
 
+function subscribe(listener: () => void) {
+  toastListeners.push(listener);
+  return () => {
+    toastListeners = toastListeners.filter(l => l !== listener);
+  };
+}
+
+function getSnapshot() {
+  return toasts;
+}
+
+function dismiss(id: string) {
+  toasts = toasts.filter(t => t.id !== id);
+  notifyListeners();
+}
+
 export function useToast() {
-  const [, setUpdate] = useState(0);
-
-  const subscribe = useCallback(() => {
-    const listener = () => setUpdate(prev => prev + 1);
-    toastListeners.push(listener);
-    return () => {
-      toastListeners = toastListeners.filter(l => l !== listener);
-    };
-  }, []);
-
-  // Subscribe on mount
-  useState(() => {
-    const unsubscribe = subscribe();
-    return unsubscribe;
-  });
-
-  const dismiss = useCallback((id: string) => {
-    toasts = toasts.filter(t => t.id !== id);
-    notifyListeners();
-  }, []);
-
+  const currentToasts = useSyncExternalStore(subscribe, getSnapshot);
   return {
-    toasts,
+    toasts: currentToasts,
     toast,
     dismiss
   };

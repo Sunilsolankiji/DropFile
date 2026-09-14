@@ -32,7 +32,7 @@ export interface SharedTextMessage {
   text: string;
   peerId: string;
   peerName: string;
-  createdAt: number;
+  createdAt: number | string;
 }
 
 export interface ServerInfo {
@@ -40,7 +40,37 @@ export interface ServerInfo {
   port: number;
 }
 
+interface ServerResponse {
+  success: boolean;
+  error?: string;
+}
+
+interface JoinRoomResponse extends ServerResponse {
+  peers?: NetworkPeer[];
+  files?: NetworkFile[];
+  texts?: SharedTextMessage[];
+}
+
+interface AddFileResponse extends ServerResponse {
+  expiresAt: number;
+}
+
+interface DownloadFileResponse extends ServerResponse {
+  file?: { data: string; type: string };
+}
+
+interface AddTextResponse extends ServerResponse {
+  text?: Partial<SharedTextMessage> & { message?: string };
+}
+
+interface TextConfirmation<Response extends ServerResponse> {
+  event: 'text-added';
+  accept: (message: SharedTextMessage) => Response | undefined;
+}
+
 const HEARTBEAT_INTERVAL = 5000; // 5 seconds
+const ACK_TIMEOUT = 30000;
+export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
 export class NetworkPeerService {
   private socket: Socket | null = null;
@@ -53,6 +83,11 @@ export class NetworkPeerService {
   private texts: Map<string, SharedTextMessage> = new Map();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private processedPeerIds: Set<string> = new Set(); // Track processed peer-joined events
+  private joined = false;
+  private connectionGeneration = 0;
+  private settleConnection: ((connected: boolean) => void) | null = null;
+  private pendingRequests = new Set<(error: Error) => void>();
+  private onConnectionChanged: (state: ConnectionState, error?: string) => void;
 
   private onPeersChanged: (peers: NetworkPeer[]) => void;
   private onFilesChanged: (files: NetworkFile[]) => void;
@@ -76,6 +111,7 @@ export class NetworkPeerService {
       onFileAdded?: (file: NetworkFile) => void;
       onFileRemoved?: (fileId: string) => void;
       onTextAdded?: (text: SharedTextMessage) => void;
+      onConnectionChanged?: (state: ConnectionState, error?: string) => void;
     },
     peerId?: string
   ) {
@@ -92,6 +128,7 @@ export class NetworkPeerService {
     this.onFileAdded = callbacks.onFileAdded || (() => {});
     this.onFileRemoved = callbacks.onFileRemoved || (() => {});
     this.onTextAdded = callbacks.onTextAdded || (() => {});
+    this.onConnectionChanged = callbacks.onConnectionChanged || (() => {});
   }
 
   private generatePeerId(): string {
@@ -104,9 +141,9 @@ export class NetworkPeerService {
 
   updatePeerName(name: string): void {
     this.peerName = name;
-    if (!this.socket) return;
+    if (!this.isConnected()) return;
 
-    this.socket.emit('update-peer-name', {
+    this.socket!.emit('update-peer-name', {
       roomCode: this.roomCode,
       peerId: this.peerId,
       peerName: name
@@ -117,36 +154,112 @@ export class NetworkPeerService {
    * Connect to the backend server
    */
   async connect(): Promise<boolean> {
+    this.disconnect();
+    this.onConnectionChanged('connecting');
     return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.onConnectionChanged('disconnected', 'Connection timed out. Please retry.');
+        this.settleConnection?.(false);
+      }, ACK_TIMEOUT);
+      this.settleConnection = (connected) => {
+        clearTimeout(timeout);
+        this.settleConnection = null;
+        resolve(connected);
+      };
       try {
-        this.socket = io(this.serverUrl, {
+        const socket = io(this.serverUrl, {
+          autoConnect: false,
+          forceNew: true,
           reconnection: true,
           reconnectionDelay: 1000,
           reconnectionDelayMax: 5000,
           reconnectionAttempts: 5,
           transports: ['websocket', 'polling']
         });
+        this.socket = socket;
 
-        this.socket.on('connect', () => {
-          console.log(`Connected to server at ${this.serverUrl}`);
-          this.joinRoom();
-          this.setupHeartbeat();
-          resolve(true);
+        socket.on('connect', async () => {
+          const generation = ++this.connectionGeneration;
+          this.onConnectionChanged('connecting');
+          try {
+            await this.joinRoom();
+            if (this.socket !== socket || generation !== this.connectionGeneration) return;
+            this.joined = true;
+            this.setupHeartbeat();
+            this.onConnectionChanged('connected');
+            this.settleConnection?.(true);
+          } catch (error) {
+            if (this.socket !== socket || generation !== this.connectionGeneration) return;
+            this.onConnectionChanged('disconnected', error instanceof Error ? error.message : 'Failed to join room');
+            this.settleConnection?.(false);
+          }
         });
 
-        this.socket.on('connect_error', (error) => {
-          console.error('Connection error:', error);
+        socket.on('connect_error', (error) => {
+          this.onConnectionChanged('disconnected', `Cannot connect to backend: ${error.message}`);
+          this.settleConnection?.(false);
         });
 
-        this.socket.on('disconnect', () => {
-          console.log('Disconnected from server');
+        socket.on('disconnect', () => {
+          ++this.connectionGeneration;
           this.cleanup();
+          this.onConnectionChanged('disconnected', 'Connection lost. Reconnecting when possible.');
+          this.settleConnection?.(false);
         });
-
+        socket.io.on('reconnect_attempt', () => {
+          this.onConnectionChanged('connecting', 'Connection lost. Reconnecting...');
+        });
+        socket.io.on('reconnect_failed', () => {
+          this.onConnectionChanged('disconnected', 'Unable to reconnect. Please retry.');
+          this.settleConnection?.(false);
+        });
         this.setupEventListeners();
+        socket.connect();
       } catch (error) {
-        console.error('Failed to connect:', error);
-        resolve(false);
+        this.onConnectionChanged('disconnected', error instanceof Error ? error.message : 'Connection failed');
+        this.settleConnection?.(false);
+      }
+    });
+  }
+
+  private request<Response extends ServerResponse = ServerResponse>(
+    event: string,
+    payload: unknown,
+    timeout = ACK_TIMEOUT,
+    requireJoined = true,
+    confirmation?: TextConfirmation<Response>
+  ): Promise<Response> {
+    const socket = this.socket;
+    if (!socket?.connected || (requireJoined && !this.joined)) {
+      return Promise.reject(new Error('Not connected to the room'));
+    }
+    return new Promise<Response>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: Error, response?: Response) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.pendingRequests.delete(cancel);
+        if (confirmation) socket.off(confirmation.event, confirm);
+        if (error) reject(error);
+        else if (response) resolve(response);
+        else reject(new Error('The server did not return a response'));
+      };
+      const cancel = (error: Error) => finish(error);
+      const confirm = (payload: SharedTextMessage) => {
+        const response = confirmation?.accept(payload);
+        if (response) finish(undefined, response);
+      };
+      const timer = setTimeout(() => finish(new Error('Server did not confirm the action. Please check the room before retrying.')), timeout);
+      this.pendingRequests.add(cancel);
+      if (confirmation) socket.on(confirmation.event, confirm);
+      try {
+        socket.emit(event, payload, (response: Response) => {
+          if (response?.success === true) finish(undefined, response);
+          else finish(new Error(response?.error || 'The server rejected the action'));
+        });
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error('Could not send the action'));
       }
     });
   }
@@ -154,65 +267,47 @@ export class NetworkPeerService {
   /**
    * Join a room on the backend
    */
-  private joinRoom(): void {
-    if (!this.socket) return;
-
-    this.socket.emit(
+  private async joinRoom(): Promise<void> {
+    const generation = this.connectionGeneration;
+    const response = await this.request<JoinRoomResponse>(
       'join-room',
       {
         roomCode: this.roomCode,
         peerName: this.peerName,
         peerId: this.peerId
       },
-      (response: any) => {
-        if (response.success) {
-          console.log(`Joined room ${this.roomCode}`);
-
-          // Clear peers first to prevent duplicates
-          this.peers.clear();
-
-          // Add ourselves to the peers list first
-          this.peers.set(this.peerId, {
-            id: this.peerId,
-            name: this.peerName,
-            lastSeen: Date.now(),
-            joinedAt: Date.now(),
-            isActive: true
-          });
-
-          // Update peers and files from server
-          if (response.peers) {
-            response.peers.forEach((peer: NetworkPeer) => {
-              // Don't add ourselves again
-              if (peer.id !== this.peerId) {
-                this.peers.set(peer.id, peer);
-              }
-            });
-          }
-
-          // Notify about current peer list
-          this.onPeersChanged(Array.from(this.peers.values()));
-
-          if (response.files) {
-            this.files.clear();
-            response.files.forEach((file: NetworkFile) => {
-              this.files.set(file.id, file);
-            });
-            this.onFilesChanged(Array.from(this.files.values()));
-          }
-
-          if (response.texts) {
-            this.texts.clear();
-            response.texts.forEach((text: SharedTextMessage) => {
-              this.texts.set(text.id, text);
-            });
-            this.onTextsChanged(Array.from(this.texts.values()));
-          }
-        } else {
-          console.error('Failed to join room:', response.error);
-        }
-      }
+      ACK_TIMEOUT,
+      false
     );
+    if (generation !== this.connectionGeneration || !this.socket?.connected) {
+      throw new Error('Connection lost while joining the room');
+    }
+
+    this.peers.clear();
+    this.processedPeerIds.clear();
+    this.peers.set(this.peerId, {
+      id: this.peerId,
+      name: this.peerName,
+      lastSeen: Date.now(),
+      joinedAt: Date.now(),
+      isActive: true
+    });
+    (response.peers || []).forEach((peer: NetworkPeer) => {
+      if (peer.id !== this.peerId) this.peers.set(peer.id, peer);
+    });
+    this.onPeersChanged(Array.from(this.peers.values()));
+
+    this.files.clear();
+    (response.files || []).forEach((file: NetworkFile) => {
+      this.files.set(file.id, file);
+    });
+    this.onFilesChanged(Array.from(this.files.values()));
+
+    this.texts.clear();
+    (response.texts || []).forEach((text: SharedTextMessage) => {
+      this.texts.set(text.id, text);
+    });
+    this.onTextsChanged(Array.from(this.texts.values()));
   }
 
   /**
@@ -248,6 +343,7 @@ export class NetworkPeerService {
     this.socket.on('peer-left', ({ peerId }: { peerId: string }) => {
       console.log(`Peer left: ${peerId}`);
       this.peers.delete(peerId);
+      this.processedPeerIds.delete(peerId);
       this.onPeerLeft(peerId);
       this.onPeersChanged(Array.from(this.peers.values()));
     });
@@ -288,8 +384,8 @@ export class NetworkPeerService {
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
 
     this.heartbeatInterval = setInterval(() => {
-      if (this.socket && this.socket.connected) {
-        this.socket.emit('heartbeat', {
+      if (this.isConnected()) {
+        this.socket!.emit('heartbeat', {
           peerId: this.peerId,
           roomCode: this.roomCode
         });
@@ -301,181 +397,162 @@ export class NetworkPeerService {
    * Add a file to share
    */
   async addFile(file: File, onProgress?: (progress: number) => void): Promise<NetworkFile | null> {
-    if (!this.socket) {
-      console.error('Not connected to server');
-      return null;
-    }
-
-    return new Promise((resolve) => {
+    if (!this.isConnected()) throw new Error('Not connected to the room');
+    const generation = this.connectionGeneration;
+    const fileId = this.generateFileId();
+    const base64Data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        this.pendingRequests.delete(cancel);
+        if (error) reject(error);
+        else resolve(reader.result as string);
+      };
+      const cancel = (error: Error) => {
+        finish(error);
+        reader.abort();
+      };
+      this.pendingRequests.add(cancel);
+      reader.onprogress = (event) => {
+        if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 50));
+      };
+      reader.onload = () => finish();
+      reader.onerror = () => finish(new Error(`Failed to read ${file.name}`));
+      reader.onabort = () => finish(new Error(`Reading ${file.name} was cancelled`));
       try {
-        const fileId = this.generateFileId();
-
-        // Convert file to base64
-        const reader = new FileReader();
-
-        reader.onprogress = (e) => {
-          if (e.lengthComputable && onProgress) {
-            const progress = Math.round((e.loaded / e.total) * 50); // 0-50% for reading
-            onProgress(progress);
-          }
-        };
-
-        reader.onload = (e) => {
-          const base64Data = e.target?.result as string;
-
-          // 50% done with reading, now uploading
-          if (onProgress) onProgress(50);
-
-          this.socket!.emit(
-            'add-file',
-            {
-              roomCode: this.roomCode,
-              file: {
-                id: fileId,
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                data: base64Data
-              },
-              peerId: this.peerId,
-              peerName: this.peerName
-            },
-            (response: any) => {
-              if (response.success) {
-                if (onProgress) onProgress(100);
-
-                const networkFile: NetworkFile = {
-                  id: fileId,
-                  name: file.name,
-                  size: file.size,
-                  type: file.type,
-                  peerId: this.peerId,
-                  peerName: this.peerName,
-                  expiresAt: response.expiresAt,
-                  uploadedAt: Date.now()
-                };
-
-                this.files.set(fileId, networkFile);
-                console.log(`File uploaded: ${file.name}`);
-                resolve(networkFile);
-              } else {
-                console.error('Failed to add file:', response.error);
-                resolve(null);
-              }
-            }
-          );
-        };
-
-        reader.onerror = () => {
-          console.error('Failed to read file');
-          resolve(null);
-        };
-
         reader.readAsDataURL(file);
       } catch (error) {
-        console.error('Error adding file:', error);
-        resolve(null);
+        finish(error instanceof Error ? error : new Error(`Failed to read ${file.name}`));
       }
     });
+    if (generation !== this.connectionGeneration) throw new Error('Connection lost during upload');
+    onProgress?.(50);
+    const response = await this.request<AddFileResponse>('add-file', {
+      roomCode: this.roomCode,
+      file: { id: fileId, name: file.name, size: file.size, type: file.type, data: base64Data },
+      peerId: this.peerId,
+      peerName: this.peerName
+    }, 120000);
+    if (generation !== this.connectionGeneration) throw new Error('Connection lost during upload');
+    const networkFile: NetworkFile = {
+      id: fileId,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      peerId: this.peerId,
+      peerName: this.peerName,
+      expiresAt: response.expiresAt,
+      uploadedAt: Date.now()
+    };
+    this.files.set(fileId, networkFile);
+    this.onFilesChanged(Array.from(this.files.values()));
+    onProgress?.(100);
+    return networkFile;
   }
 
   /**
    * Download a file
    */
   async downloadFile(fileId: string): Promise<Blob | null> {
-    if (!this.socket) {
-      console.error('Not connected to server');
-      return null;
+    const response = await this.request<DownloadFileResponse>('download-file', { fileId }, 120000);
+    if (!response.file || typeof response.file.data !== 'string') {
+      throw new Error('The server did not return file data');
+    }
+    const data = response.file.data;
+    const base64Data = data.includes(',') ? data.slice(data.indexOf(',') + 1) : data;
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
     }
 
-    return new Promise((resolve) => {
-      this.socket!.emit('download-file', { fileId }, (response: any) => {
-        if (response.success && response.file) {
-          try {
-            // Convert base64 back to blob
-            const base64Data = response.file.data.split(',')[1] || response.file.data;
-            const binaryString = atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-
-            const blob = new Blob([bytes], { type: response.file.type });
-            console.log(`File downloaded: ${response.file.name}`);
-            resolve(blob);
-          } catch (error) {
-            console.error('Error processing file:', error);
-            resolve(null);
-          }
-        } else {
-          console.error('Failed to download file:', response.error);
-          resolve(null);
-        }
-      });
-    });
+    return new Blob([bytes], { type: response.file.type });
   }
 
   /**
    * Remove a file from sharing
    */
-  removeFile(fileId: string): void {
-    if (!this.socket) return;
-
-    this.socket.emit(
+  async removeFile(fileId: string): Promise<boolean> {
+    await this.request(
       'remove-file',
       {
         fileId,
         roomCode: this.roomCode
-      },
-      (response: any) => {
-        if (response.success) {
-          this.files.delete(fileId);
-          console.log(`File removed: ${fileId}`);
-        } else {
-          console.error('Failed to remove file:', response.error);
-        }
       }
     );
+    this.files.delete(fileId);
+    this.onFilesChanged(Array.from(this.files.values()));
+    return true;
   }
 
-  addText(text: string): void {
-    if (!this.socket) return;
-
+  async addText(text: string, id = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, createdAt: number | string = Date.now()): Promise<SharedTextMessage> {
     const payload = {
-      id: `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id,
       message: text,
       peerId: this.peerId,
       peerName: this.peerName,
-      createdAt: Date.now()
+      createdAt
     };
 
-    this.socket.emit('add-text', { roomCode: this.roomCode, text: payload }, (response: any) => {
-      if (!response.success) {
-        console.error('Failed to add text:', response.error);
-        return;
+    const response = await this.request<AddTextResponse>(
+      'add-text',
+      { roomCode: this.roomCode, text: payload },
+      ACK_TIMEOUT,
+      true,
+      {
+        event: 'text-added',
+        accept: (message: SharedTextMessage) => message.id === id && message.peerId === this.peerId
+          ? { success: true, text: message }
+          : undefined
       }
-    });
+    );
+    const message: SharedTextMessage = {
+      id,
+      text,
+      peerId: payload.peerId,
+      peerName: payload.peerName,
+      createdAt: payload.createdAt,
+      ...(response.text?.id ? {
+        ...response.text,
+        text: response.text.text ?? response.text.message ?? text
+      } : {})
+    };
+    this.texts.set(message.id, message);
+    return message;
   }
 
   /**
    * Disconnect from server
    */
   disconnect(): void {
-    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    ++this.connectionGeneration;
+    this.settleConnection?.(false);
     if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.io.removeAllListeners();
       this.socket.disconnect();
+      this.socket = null;
     }
     this.cleanup();
+    this.texts.clear();
+    this.onConnectionChanged('disconnected');
   }
 
   /**
    * Cleanup resources
    */
   private cleanup(): void {
+    this.joined = false;
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    this.heartbeatInterval = null;
+    for (const cancel of this.pendingRequests) cancel(new Error('Connection lost before the server confirmed the action'));
     this.peers.clear();
     this.files.clear();
     this.processedPeerIds.clear();
+    this.onPeersChanged([]);
+    this.onFilesChanged([]);
   }
 
   // Getters
@@ -496,7 +573,7 @@ export class NetworkPeerService {
   }
 
   isConnected(): boolean {
-    return this.socket?.connected ?? false;
+    return this.joined && (this.socket?.connected ?? false);
   }
 
   getRoomCode(): string {

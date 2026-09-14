@@ -1,118 +1,90 @@
-import { useState, useRef } from 'react';
-import { UploadCloud, FileUp } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Button } from 'react-bootstrap';
+import { ArrowUpFromLine, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 type FileUploadProps = {
-  onUpload: (files: File[]) => void;
+  onUpload: (files: File[]) => Promise<void>;
+  disabled?: boolean;
 };
 
 const MAX_FILES = 10;
 const MAX_FILE_SIZE_MB = 100;
 
-export default function FileUpload({ onUpload }: FileUploadProps) {
+export default function FileUpload({ onUpload, disabled = false }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const { toast } = useToast();
+  const dragDepth = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   const handleFiles = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-
-    if (files.length > MAX_FILES) {
-      toast({
-        title: 'Too many files',
-        description: `You can upload a maximum of ${MAX_FILES} files at a time.`,
-        variant: 'danger',
-      });
+    if (!files?.length) return;
+    if (disabled) {
+      toast({ title: 'Not connected yet', description: 'Wait for the room to connect before adding files.', variant: 'warning' });
       return;
     }
-
-    const validFiles: File[] = [];
-    for (const file of Array.from(files)) {
+    if (files.length > MAX_FILES) {
+      toast({ title: 'Too many files', description: `Choose up to ${MAX_FILES} files at a time.`, variant: 'danger' });
+      return;
+    }
+    const validFiles = Array.from(files).filter(file => {
       if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-        toast({
-          title: 'File too large',
-          description: `${file.name} is larger than ${MAX_FILE_SIZE_MB}MB and was not added.`,
-          variant: 'danger',
-        });
-      } else {
-        validFiles.push(file);
+        toast({ title: 'File is too large', description: `${file.name} exceeds ${MAX_FILE_SIZE_MB} MB and was not added.`, variant: 'danger' });
+        return false;
       }
-    }
-
-    if (validFiles.length > 0) {
-      onUpload(validFiles);
-      toast({
-        title: 'Upload Started',
-        description: `${validFiles.length} file(s) are being uploaded.`,
-        variant: 'success',
-      });
-    }
-  };
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setIsDragging(true);
-    } else if (e.type === 'dragleave') {
-      setIsDragging(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleFiles(e.target.files);
-    e.target.value = '';
-  };
-
-  const handleDropzoneClick = () => {
-    fileInputRef.current?.click();
+      return true;
+    });
+    if (validFiles.length) void onUpload(validFiles);
   };
 
   return (
-    <div
-      onDragEnter={handleDrag}
-      onDragOver={handleDrag}
-      onDragLeave={handleDrag}
-      onDrop={handleDrop}
-      onClick={handleDropzoneClick}
-      className={`dropzone ${isDragging ? 'dragging' : ''}`}
-      style={{ cursor: 'pointer' }}
+    <section
+      className={`dropzone${isDragging && !disabled ? ' dragging' : ''}${disabled ? ' is-disabled' : ''}`}
+      aria-labelledby="upload-title"
+      onDragEnter={(event) => {
+        event.preventDefault();
+        if (!event.dataTransfer.types.includes('Files')) return;
+        dragDepth.current += 1;
+        setIsDragging(true);
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = disabled ? 'none' : 'copy';
+      }}
+      onDragLeave={(event) => {
+        event.preventDefault();
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (!dragDepth.current) setIsDragging(false);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        dragDepth.current = 0;
+        setIsDragging(false);
+        handleFiles(event.dataTransfer.files);
+      }}
     >
       <input
         ref={fileInputRef}
         type="file"
         multiple
-        className="d-none"
-        onChange={handleFileSelect}
+        hidden
+        disabled={disabled}
+        aria-label="Choose files to share"
+        onChange={(event) => {
+          handleFiles(event.target.files);
+          event.target.value = '';
+        }}
       />
-      <div className="d-flex flex-column align-items-center justify-content-center w-100 h-100">
-        <div className={`dropzone-icon ${isDragging ? 'pulse-animation' : ''}`}>
-          {isDragging ? <FileUp size={36} style={{ width: 36, height: 36 }} /> : <UploadCloud size={36} style={{ width: 36, height: 36 }} />}
+      <div className="dropzone-content">
+        <span className="dropzone-icon"><ArrowUpFromLine size={24} aria-hidden="true" /></span>
+        <div className="dropzone-copy">
+          <h2 id="upload-title">{isDragging && !disabled ? 'Let go to share your files' : 'Drop files here to share'}</h2>
+          <p id="upload-limits">Up to {MAX_FILES} files at a time. {MAX_FILE_SIZE_MB} MB per file.</p>
         </div>
-        <h5 className="fw-bold mb-2">
-          {isDragging ? 'Drop files here!' : 'Drag & drop files here'}
-        </h5>
-        <p className="text-muted mb-3">or click to browse from your device</p>
-        <div className="d-flex gap-3 text-muted small">
-          <span className="d-flex align-items-center gap-1">
-            <span className="badge bg-secondary bg-opacity-10 text-secondary">
-              Max {MAX_FILE_SIZE_MB}MB
-            </span>
-          </span>
-          <span className="d-flex align-items-center gap-1">
-            <span className="badge bg-secondary bg-opacity-10 text-secondary">
-              Up to {MAX_FILES} files
-            </span>
-          </span>
-        </div>
+        <Button variant="outline-secondary" onClick={() => fileInputRef.current?.click()} disabled={disabled} aria-describedby="upload-limits">
+          <Plus size={17} aria-hidden="true" /> Choose files
+        </Button>
       </div>
-    </div>
+    </section>
   );
 }
