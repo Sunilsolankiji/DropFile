@@ -6,6 +6,11 @@
  */
 
 import io, { Socket } from 'socket.io-client';
+import { DEFAULT_FILE_TYPE } from './transfer-types';
+import type {
+  CreatedTransfer, FileMetadata, ShareMetadata, StartedTransfer,
+  TransferClient, TransferSnapshot, TransferUpdate
+} from './transfer-types';
 
 export interface NetworkPeer {
   id: string;
@@ -16,16 +21,7 @@ export interface NetworkPeer {
   isActive?: boolean;
 }
 
-export interface NetworkFile {
-  id: string;
-  name: string;
-  size: number;
-  type: string;
-  peerId: string;
-  peerName: string;
-  expiresAt: number;
-  uploadedAt?: number;
-}
+export type NetworkFile = ShareMetadata;
 
 export interface SharedTextMessage {
   id: string;
@@ -51,14 +47,6 @@ interface JoinRoomResponse extends ServerResponse {
   texts?: SharedTextMessage[];
 }
 
-interface AddFileResponse extends ServerResponse {
-  expiresAt: number;
-}
-
-interface DownloadFileResponse extends ServerResponse {
-  file?: { data: string; type: string };
-}
-
 interface AddTextResponse extends ServerResponse {
   text?: Partial<SharedTextMessage> & { message?: string };
 }
@@ -72,7 +60,7 @@ const HEARTBEAT_INTERVAL = 5000; // 5 seconds
 const ACK_TIMEOUT = 30000;
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
-export class NetworkPeerService {
+export class NetworkPeerService implements TransferClient {
   private socket: Socket | null = null;
   private peerId: string;
   private peerName: string;
@@ -97,6 +85,9 @@ export class NetworkPeerService {
   private onFileAdded: (file: NetworkFile) => void;
   private onFileRemoved: (fileId: string) => void;
   private onTextAdded: (text: SharedTextMessage) => void;
+  private onTransferUpdated: (update: TransferUpdate) => void;
+  private onTransferCompleted: (update: TransferUpdate) => void;
+  private onTransferError: (message: string) => void;
 
   constructor(
     serverUrl: string,
@@ -112,6 +103,9 @@ export class NetworkPeerService {
       onFileRemoved?: (fileId: string) => void;
       onTextAdded?: (text: SharedTextMessage) => void;
       onConnectionChanged?: (state: ConnectionState, error?: string) => void;
+      onTransferUpdated?: (update: TransferUpdate) => void;
+      onTransferCompleted?: (update: TransferUpdate) => void;
+      onTransferError?: (message: string) => void;
     },
     peerId?: string
   ) {
@@ -129,14 +123,13 @@ export class NetworkPeerService {
     this.onFileRemoved = callbacks.onFileRemoved || (() => {});
     this.onTextAdded = callbacks.onTextAdded || (() => {});
     this.onConnectionChanged = callbacks.onConnectionChanged || (() => {});
+    this.onTransferUpdated = callbacks.onTransferUpdated || (() => {});
+    this.onTransferCompleted = callbacks.onTransferCompleted || (() => {});
+    this.onTransferError = callbacks.onTransferError || (() => {});
   }
 
   private generatePeerId(): string {
     return `peer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  private generateFileId(): string {
-    return `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   updatePeerName(name: string): void {
@@ -370,6 +363,13 @@ export class NetworkPeerService {
       this.onFilesChanged(Array.from(this.files.values()));
     });
 
+    this.socket.on('transfer-updated', (update: TransferUpdate) => {
+      this.applyTransferUpdate(update);
+    });
+    this.socket.on('transfer-completed', (update: TransferUpdate) => {
+      this.applyTransferUpdate(update, true);
+    });
+
     this.socket.on('text-added', (text: SharedTextMessage) => {
       console.log('text-added received', text);
       this.texts.set(text.id, text);
@@ -393,82 +393,197 @@ export class NetworkPeerService {
     }, HEARTBEAT_INTERVAL);
   }
 
-  /**
-   * Add a file to share
-   */
-  async addFile(file: File, onProgress?: (progress: number) => void): Promise<NetworkFile | null> {
-    if (!this.isConnected()) throw new Error('Not connected to the room');
-    const generation = this.connectionGeneration;
-    const fileId = this.generateFileId();
-    const base64Data = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      let settled = false;
-      const finish = (error?: Error) => {
-        if (settled) return;
-        settled = true;
-        this.pendingRequests.delete(cancel);
-        if (error) reject(error);
-        else resolve(reader.result as string);
-      };
-      const cancel = (error: Error) => {
-        finish(error);
-        reader.abort();
-      };
-      this.pendingRequests.add(cancel);
-      reader.onprogress = (event) => {
-        if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 50));
-      };
-      reader.onload = () => finish();
-      reader.onerror = () => finish(new Error(`Failed to read ${file.name}`));
-      reader.onabort = () => finish(new Error(`Reading ${file.name} was cancelled`));
-      try {
-        reader.readAsDataURL(file);
-      } catch (error) {
-        finish(error instanceof Error ? error : new Error(`Failed to read ${file.name}`));
-      }
-    });
-    if (generation !== this.connectionGeneration) throw new Error('Connection lost during upload');
-    onProgress?.(50);
-    const response = await this.request<AddFileResponse>('add-file', {
-      roomCode: this.roomCode,
-      file: { id: fileId, name: file.name, size: file.size, type: file.type, data: base64Data },
-      peerId: this.peerId,
-      peerName: this.peerName
-    }, 120000);
-    if (generation !== this.connectionGeneration) throw new Error('Connection lost during upload');
-    const networkFile: NetworkFile = {
-      id: fileId,
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      peerId: this.peerId,
-      peerName: this.peerName,
-      expiresAt: response.expiresAt,
-      uploadedAt: Date.now()
-    };
-    this.files.set(fileId, networkFile);
-    this.onFilesChanged(Array.from(this.files.values()));
-    onProgress?.(100);
-    return networkFile;
+  private validateId(id: string): void {
+    if (typeof id !== 'string' || !id.trim() || id === '.' || id === '..') {
+      throw new Error('Invalid file or transfer ID');
+    }
   }
 
-  /**
-   * Download a file
-   */
-  async downloadFile(fileId: string): Promise<Blob | null> {
-    const response = await this.request<DownloadFileResponse>('download-file', { fileId }, 120000);
-    if (!response.file || typeof response.file.data !== 'string') {
-      throw new Error('The server did not return file data');
+  private validateChunks(chunkSize: number, totalChunks: number, size?: number): void {
+    if (!Number.isSafeInteger(chunkSize) || chunkSize <= 0 ||
+        !Number.isSafeInteger(totalChunks) || totalChunks < 0 ||
+        (size !== undefined && (!Number.isSafeInteger(size) || size < 0 ||
+          Math.ceil(size / chunkSize) !== totalChunks))) {
+      throw new Error('Invalid transfer chunk dimensions');
     }
-    const data = response.file.data;
-    const base64Data = data.includes(',') ? data.slice(data.indexOf(',') + 1) : data;
-    const binaryString = atob(base64Data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
+  }
 
-    return new Blob([bytes], { type: response.file.type });
+  private validateIndexes(indexes: number[], totalChunks: number): void {
+    if (!Array.isArray(indexes) || indexes.some(index =>
+      !Number.isSafeInteger(index) || index < 0 || index >= totalChunks) ||
+      new Set(indexes).size !== indexes.length) {
+      throw new Error('The server must return valid chunk index arrays, not counts');
+    }
+  }
+
+  private applyTransferUpdate(update: TransferUpdate, completed = false): void {
+    if (!update || typeof update.transferId !== 'string' || !update.transferId.trim() ||
+        typeof update.fileId !== 'string' || !update.fileId.trim() || !update.status ||
+        typeof update.status.state !== 'string' || !update.status.state.trim() ||
+        !Number.isSafeInteger(update.status.uploadedChunks) || update.status.uploadedChunks < 0 ||
+        !Number.isSafeInteger(update.status.acknowledgedChunks) || update.status.acknowledgedChunks < 0) {
+      this.onTransferError('Invalid transfer update: expected IDs, state, and nonnegative chunk counts');
+      return;
+    }
+    const file = this.files.get(update.fileId);
+    if (file && (file.transferId !== update.transferId ||
+        update.status.uploadedChunks > file.totalChunks ||
+        update.status.acknowledgedChunks > file.totalChunks)) {
+      this.onTransferError('Invalid transfer update: transfer ID mismatch or chunk counts out of bounds');
+      return;
+    }
+    const next = completed
+      ? { ...update, status: { ...update.status, state: 'completed' } }
+      : update;
+    if (file) {
+      this.files.set(file.id, {
+        ...file,
+        status: next.status.state,
+        transfer: { ...file.transfer, ...next.status }
+      });
+      this.onFilesChanged(Array.from(this.files.values()));
+    }
+    // Push counts and chunkIndex are notifications, never authoritative index sets.
+    if (completed) this.onTransferCompleted(next);
+    else this.onTransferUpdated(next);
+  }
+
+  async createFileShare(file: FileMetadata): Promise<CreatedTransfer> {
+    if (typeof file.name !== 'string' || !file.name || typeof file.type !== 'string') {
+      throw new Error('Invalid file metadata');
+    }
+    this.validateChunks(file.chunkSize, file.totalChunks, file.size);
+    if (file.id !== undefined) this.validateId(file.id);
+    if (file.hash !== undefined && typeof file.hash !== 'string') throw new Error('Invalid file hash');
+    const metadata: FileMetadata = {
+      name: file.name, size: file.size, type: file.type || DEFAULT_FILE_TYPE,
+      chunkSize: file.chunkSize, totalChunks: file.totalChunks,
+      ...(file.id !== undefined ? { id: file.id } : {}),
+      ...(file.hash !== undefined ? { hash: file.hash } : {})
+    };
+    const generation = this.connectionGeneration;
+    const response = await this.request<CreatedTransfer>('add-file', {
+      roomCode: this.roomCode, peerId: this.peerId, file: metadata
+    });
+    if (generation !== this.connectionGeneration) throw new Error('Connection lost while sharing the file');
+    this.validateId(response.fileId);
+    this.validateId(response.transferId);
+    if (metadata.id !== undefined && response.fileId !== metadata.id) throw new Error('File ID mismatch');
+    this.validateChunks(response.chunkSize, response.totalChunks, metadata.size);
+    if (!Number.isFinite(response.expiresAt) || response.expiresAt <= Date.now()) {
+      throw new Error('Invalid transfer expiry');
+    }
+    this.getChunkUrl(response.uploadUrlTemplate, response.transferId, 0);
+    const existing = this.files.get(response.fileId);
+    if (existing && (existing.transferId !== response.transferId || existing.size !== metadata.size ||
+        existing.chunkSize !== response.chunkSize || existing.totalChunks !== response.totalChunks)) {
+      throw new Error('Transfer metadata mismatch');
+    }
+    if (!existing) {
+      this.files.set(response.fileId, {
+        ...metadata,
+        id: response.fileId,
+        transferId: response.transferId,
+        roomCode: this.roomCode,
+        peerId: this.peerId,
+        peerName: this.peerName,
+        expiresAt: response.expiresAt,
+        chunkSize: response.chunkSize,
+        totalChunks: response.totalChunks,
+        uploadedAt: Date.now(),
+        status: 'pending'
+      });
+      this.onFilesChanged(Array.from(this.files.values()));
+    }
+    return response;
+  }
+
+  async startTransfer(fileId: string): Promise<StartedTransfer> {
+    this.validateId(fileId);
+    const response = await this.request<StartedTransfer>('start-transfer', {
+      roomCode: this.roomCode, fileId, peerId: this.peerId
+    });
+    this.validateId(response.transferId);
+    if (response.fileId !== fileId) throw new Error('File ID mismatch');
+    const file = this.files.get(fileId);
+    if (file && file.transferId !== response.transferId) throw new Error('Transfer ID mismatch');
+    this.validateChunks(response.chunkSize, response.totalChunks, file?.size);
+    if (file && (file.chunkSize !== response.chunkSize || file.totalChunks !== response.totalChunks)) {
+      throw new Error('Transfer metadata mismatch');
+    }
+    if (typeof response.state !== 'string' || !response.state) throw new Error('Invalid transfer state');
+    this.validateIndexes(response.uploadedChunks, response.totalChunks);
+    this.validateIndexes(response.acknowledgedChunks, response.totalChunks);
+    this.getChunkUrl(response.downloadUrlTemplate, response.transferId, 0);
+    return response;
+  }
+
+  async getTransferState(transferId: string): Promise<TransferSnapshot> {
+    this.validateId(transferId);
+    const response = await this.request<TransferSnapshot>('get-transfer-state', {
+      transferId
+    });
+    if (response.transferId !== transferId || response.roomCode !== this.roomCode) {
+      throw new Error('Transfer or room ID mismatch');
+    }
+    this.validateId(response.fileId);
+    if (!response.summary || typeof response.state !== 'string' || !response.state) {
+      throw new Error('Invalid transfer snapshot');
+    }
+    const file = Array.from(this.files.values()).find(value => value.transferId === transferId);
+    if (file && file.id !== response.fileId) throw new Error('File ID mismatch');
+    const namedFile = this.files.get(response.fileId);
+    if (namedFile && namedFile.transferId !== transferId) throw new Error('Transfer ID mismatch');
+    this.validateChunks(response.chunkSize, response.summary.totalChunks, file?.size);
+    if (file && (file.chunkSize !== response.chunkSize || file.totalChunks !== response.summary.totalChunks)) {
+      throw new Error('Transfer metadata mismatch');
+    }
+    this.validateIndexes(response.summary.uploadedChunks, response.summary.totalChunks);
+    this.validateIndexes(response.summary.acknowledgedChunks, response.summary.totalChunks);
+    return response;
+  }
+
+  async acknowledgeChunk(transferId: string, chunkIndex: number): Promise<void> {
+    this.validateId(transferId);
+    const file = Array.from(this.files.values()).find(value => value.transferId === transferId);
+    if (!Number.isSafeInteger(chunkIndex) || chunkIndex < 0 ||
+        (file && chunkIndex >= file.totalChunks)) throw new Error('Invalid chunk index');
+    if (!this.isConnected()) throw new Error('Not connected to the room');
+    this.socket!.emit('ack-transfer-chunk', {
+      transferId, chunkIndex, peerId: this.peerId
+    });
+  }
+
+  async cancelTransfer(transferId: string, reason: string): Promise<void> {
+    this.validateId(transferId);
+    if (typeof reason !== 'string' || !reason.trim()) throw new Error('A cancellation reason is required');
+    if (!this.isConnected()) throw new Error('Not connected to the room');
+    this.socket!.emit('cancel-transfer', {
+      roomCode: this.roomCode, transferId, peerId: this.peerId, reason
+    });
+  }
+
+  getChunkUrl(template: string | undefined, transferId: string, chunkIndex: number): string {
+    this.validateId(transferId);
+    if (!Number.isSafeInteger(chunkIndex) || chunkIndex < 0) throw new Error('Invalid chunk index');
+    const backend = new URL(this.serverUrl, typeof window === 'undefined' ? undefined : window.location.href);
+    if (backend.protocol !== 'http:' && backend.protocol !== 'https:') {
+      throw new Error('The backend must use HTTP or HTTPS');
+    }
+    if (template !== undefined && (typeof template !== 'string' || !template.trim())) {
+      throw new Error('Invalid chunk URL template');
+    }
+    const source = template ?? '/api/transfers/{transferId}/chunks/{chunkIndex}';
+    const path = source.replace(/\{(transferId|chunkIndex)\}|:(transferId|chunkIndex)\b/g,
+      (_match, braced: string | undefined, colon: string | undefined) =>
+        encodeURIComponent((braced ?? colon) === 'transferId' ? transferId : String(chunkIndex)));
+    if (/[{}]/.test(path)) throw new Error('Unresolved chunk URL placeholder');
+    const url = new URL(path, `${backend.origin}/`);
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') ||
+        url.origin !== backend.origin || url.username || url.password) {
+      throw new Error('Chunk URLs must use the backend HTTP origin');
+    }
+    return url.href;
   }
 
   /**
@@ -549,10 +664,8 @@ export class NetworkPeerService {
     this.heartbeatInterval = null;
     for (const cancel of this.pendingRequests) cancel(new Error('Connection lost before the server confirmed the action'));
     this.peers.clear();
-    this.files.clear();
     this.processedPeerIds.clear();
     this.onPeersChanged([]);
-    this.onFilesChanged([]);
   }
 
   // Getters

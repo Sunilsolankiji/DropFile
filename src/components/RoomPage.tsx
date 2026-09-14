@@ -12,9 +12,9 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 
 export default function RoomPage({ roomCode }: { roomCode: string }) {
   const {
-    files, uploadingFiles, uploadFiles, deleteFile, downloadFile, loading, error,
+    files, transfers, uploadFiles, deleteFile, downloadFile, loading, error,
     isConnected, peerCount, currentPeerId, currentPeerName, sendText, textMessages,
-    updateDeviceName, retryConnection, retryText,
+    updateDeviceName, retryConnection, retryText, pauseTransfer, resumeTransfer, cancelTransfer, attachSource,
   } = useRoom(roomCode);
   const [showShare, setShowShare] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -153,15 +153,15 @@ export default function RoomPage({ roomCode }: { roomCode: string }) {
                 <h2 id="files-title" tabIndex={-1}>Shared files <span className="count-label">{files.length}</span></h2>
                 <span className="expiry-note"><Clock size={13} aria-hidden="true" />Available for a little while</span>
               </div>
-              {loading ? (
+              {loading && !files.length ? (
                 <div className="files-surface loading-state" role="status"><Spinner animation="border" aria-hidden="true" />Connecting to your room...</div>
-              ) : !isConnected && !files.length && !uploadingFiles.length ? (
+              ) : !isConnected && !files.length ? (
                 <div className="files-surface empty-state"><CircleAlert size={28} aria-hidden="true" /><h3>Let's get you connected</h3><p>Your files will appear once the room reconnects. You can still copy and share its code.</p></div>
               ) : (
-                <FileList files={files} uploadingFiles={uploadingFiles} currentPeerId={currentPeerId} disabled={!isConnected} onDelete={deleteFile} onDownload={downloadFile} />
+                <FileList files={files} transfers={transfers} currentPeerId={currentPeerId} disabled={!isConnected} onDelete={deleteFile} onDownload={downloadFile} onPause={pauseTransfer} onResume={resumeTransfer} onCancel={cancelTransfer} onAttachSource={attachSource} />
               )}
             </section>
-            <p className="room-footnote"><Clock size={14} aria-hidden="true" />Files expire automatically. Download anything you'd like to keep.</p>
+            <p className="room-footnote"><Clock size={14} aria-hidden="true" />Keep both devices in the room until the transfer finishes. Files expire automatically.</p>
           </div>
           {showChat && isDesktop && <div id="room-chat">{chat}</div>}
         </div>
