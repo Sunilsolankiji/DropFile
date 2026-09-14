@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { NetworkPeerService, NetworkPeer } from '@/lib/network-peer-service';
+import { NetworkPeerService, NetworkPeer, SharedTextMessage } from '@/lib/network-peer-service';
 
 export interface SharedFile {
   id: string;
@@ -24,6 +24,14 @@ export interface UploadingFile {
   size: number;
   progress: number;
 }
+
+export type ChatMessage = SharedTextMessage;
+
+export type ChatMessageWithMeta = ChatMessage & {
+  showCopyButton?: boolean;
+  status?: 'pending' | 'sent' | 'failed';
+  message?: string;
+};
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -56,6 +64,7 @@ export function useRoom(roomCode: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [peers, setPeers] = useState<NetworkPeer[]>([]);
+  const [textMessages, setTextMessages] = useState<ChatMessageWithMeta[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [currentPeerId, setCurrentPeerId] = useState<string | null>(null);
 
@@ -102,6 +111,11 @@ export function useRoom(roomCode: string) {
                 setFiles(sharedFiles);
               }
             },
+            onTextsChanged: (newTexts) => {
+              if (mounted) {
+                setTextMessages(newTexts);
+              }
+            },
             onPeerJoined: (peer) => {
               console.log(`Peer joined: ${peer.name}`);
             },
@@ -113,6 +127,13 @@ export function useRoom(roomCode: string) {
             },
             onFileRemoved: (fileId) => {
               console.log(`File removed: ${fileId}`);
+            },
+            onTextAdded: (text) => {
+              setTextMessages(prev => (
+                prev.some(existing => existing.id === text.id)
+                  ? prev
+                  : [...prev, text]
+              ));
             }
           },
           deviceIdRef.current
@@ -229,11 +250,37 @@ export function useRoom(roomCode: string) {
     }
   }, []);
 
+  const sendText = useCallback((text: string) => {
+    if (!serviceRef.current) {
+      setError('Not connected to backend');
+      return;
+    }
+
+    serviceRef.current.addText(text);
+  }, [currentPeerId]);
+
+  const updateDeviceName = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError('Device name cannot be empty');
+      return;
+    }
+
+    peerNameRef.current = trimmed;
+    localStorage.setItem(DEVICE_NAME_KEY, trimmed);
+    if (serviceRef.current) {
+      serviceRef.current.updatePeerName(trimmed);
+    }
+    setPeers(prev => prev.map(peer => (peer.id === currentPeerId ? { ...peer, name: trimmed } : peer)));
+  }, [currentPeerId]);
+
   return {
     files,
     uploadingFiles,
     uploadFiles,
     deleteFile,
+    sendText,
+    updateDeviceName,
     downloadFile,
     loading,
     error,
@@ -242,7 +289,7 @@ export function useRoom(roomCode: string) {
     peerCount: peers.length,
     currentPeerId,
     currentPeerName: peerNameRef.current,
+    textMessages,
     connectionMode: isConnected ? 'backend' : 'offline' as const
   };
 }
-

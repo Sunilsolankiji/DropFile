@@ -27,6 +27,14 @@ export interface NetworkFile {
   uploadedAt?: number;
 }
 
+export interface SharedTextMessage {
+  id: string;
+  text: string;
+  peerId: string;
+  peerName: string;
+  createdAt: number;
+}
+
 export interface ServerInfo {
   ip: string;
   port: number;
@@ -42,15 +50,18 @@ export class NetworkPeerService {
   private serverUrl: string;
   private peers: Map<string, NetworkPeer> = new Map();
   private files: Map<string, NetworkFile> = new Map();
+  private texts: Map<string, SharedTextMessage> = new Map();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private processedPeerIds: Set<string> = new Set(); // Track processed peer-joined events
 
   private onPeersChanged: (peers: NetworkPeer[]) => void;
   private onFilesChanged: (files: NetworkFile[]) => void;
+  private onTextsChanged: (texts: SharedTextMessage[]) => void;
   private onPeerJoined: (peer: NetworkPeer) => void;
   private onPeerLeft: (peerId: string) => void;
   private onFileAdded: (file: NetworkFile) => void;
   private onFileRemoved: (fileId: string) => void;
+  private onTextAdded: (text: SharedTextMessage) => void;
 
   constructor(
     serverUrl: string,
@@ -59,10 +70,12 @@ export class NetworkPeerService {
     callbacks: {
       onPeersChanged: (peers: NetworkPeer[]) => void;
       onFilesChanged: (files: NetworkFile[]) => void;
+      onTextsChanged?: (texts: SharedTextMessage[]) => void;
       onPeerJoined?: (peer: NetworkPeer) => void;
       onPeerLeft?: (peerId: string) => void;
       onFileAdded?: (file: NetworkFile) => void;
       onFileRemoved?: (fileId: string) => void;
+      onTextAdded?: (text: SharedTextMessage) => void;
     },
     peerId?: string
   ) {
@@ -73,10 +86,12 @@ export class NetworkPeerService {
 
     this.onPeersChanged = callbacks.onPeersChanged;
     this.onFilesChanged = callbacks.onFilesChanged;
+    this.onTextsChanged = callbacks.onTextsChanged || (() => {});
     this.onPeerJoined = callbacks.onPeerJoined || (() => {});
     this.onPeerLeft = callbacks.onPeerLeft || (() => {});
     this.onFileAdded = callbacks.onFileAdded || (() => {});
     this.onFileRemoved = callbacks.onFileRemoved || (() => {});
+    this.onTextAdded = callbacks.onTextAdded || (() => {});
   }
 
   private generatePeerId(): string {
@@ -85,6 +100,17 @@ export class NetworkPeerService {
 
   private generateFileId(): string {
     return `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  updatePeerName(name: string): void {
+    this.peerName = name;
+    if (!this.socket) return;
+
+    this.socket.emit('update-peer-name', {
+      roomCode: this.roomCode,
+      peerId: this.peerId,
+      peerName: name
+    });
   }
 
   /**
@@ -174,6 +200,14 @@ export class NetworkPeerService {
             });
             this.onFilesChanged(Array.from(this.files.values()));
           }
+
+          if (response.texts) {
+            this.texts.clear();
+            response.texts.forEach((text: SharedTextMessage) => {
+              this.texts.set(text.id, text);
+            });
+            this.onTextsChanged(Array.from(this.texts.values()));
+          }
         } else {
           console.error('Failed to join room:', response.error);
         }
@@ -218,6 +252,12 @@ export class NetworkPeerService {
       this.onPeersChanged(Array.from(this.peers.values()));
     });
 
+    this.socket.on('peer-updated', (peer: NetworkPeer) => {
+      console.log('peer-updated received', peer);
+      this.peers.set(peer.id, peer);
+      this.onPeersChanged(Array.from(this.peers.values()));
+    });
+
     // File added
     this.socket.on('file-added', (file: NetworkFile) => {
       console.log(`File available: ${file.name}`);
@@ -232,6 +272,12 @@ export class NetworkPeerService {
       this.files.delete(fileId);
       this.onFileRemoved(fileId);
       this.onFilesChanged(Array.from(this.files.values()));
+    });
+
+    this.socket.on('text-added', (text: SharedTextMessage) => {
+      console.log('text-added received', text);
+      this.texts.set(text.id, text);
+      this.onTextAdded(text);
     });
   }
 
@@ -393,6 +439,25 @@ export class NetworkPeerService {
     );
   }
 
+  addText(text: string): void {
+    if (!this.socket) return;
+
+    const payload = {
+      id: `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      message: text,
+      peerId: this.peerId,
+      peerName: this.peerName,
+      createdAt: Date.now()
+    };
+
+    this.socket.emit('add-text', { roomCode: this.roomCode, text: payload }, (response: any) => {
+      if (!response.success) {
+        console.error('Failed to add text:', response.error);
+        return;
+      }
+    });
+  }
+
   /**
    * Disconnect from server
    */
@@ -446,4 +511,3 @@ export class NetworkPeerService {
     return this.peerName;
   }
 }
-

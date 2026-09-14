@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Container, Row, Col, Card, Button, Spinner, Badge, Collapse } from 'react-bootstrap';
-import { Copy, Users, Home, Check, WifiOff, Server, QrCode, Clock, Monitor } from 'lucide-react';
+import { Container, Row, Col, Card, Button, Spinner, Badge, Collapse, Form } from 'react-bootstrap';
+import { Copy, Users, Home, Check, WifiOff, Server, QrCode, Clock, Monitor, MessageSquareText, Send, ClipboardCopy, CircleCheckBig, CircleAlert } from 'lucide-react';
 import FileUpload from '@/components/FileUpload';
 import FileList from '@/components/FileList';
 import { useToast } from '@/hooks/use-toast';
@@ -24,12 +24,20 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
     isConnected,
     peerCount,
     currentPeerId,
-    currentPeerName
+    currentPeerName,
+    sendText,
+    textMessages,
+    updateDeviceName
   } = useRoom(roomCode);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [hasCopied, setHasCopied] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [showQR, setShowQR] = useState(false);
-
+  const [showChat, setShowChat] = useState(false);
+  const [textValue, setTextValue] = useState('');
+  const [deviceNameInput, setDeviceNameInput] = useState(currentPeerName || '');
+  const [isEditingDeviceName, setIsEditingDeviceName] = useState(false);
+  const [showCopyOnSent, setShowCopyOnSent] = useState(false);
   useEffect(() => {
     const url = window.location.href;
     setQrCodeUrl(`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`);
@@ -44,6 +52,10 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
       });
     }
   }, [error, toast]);
+
+  useEffect(() => {
+    setDeviceNameInput(currentPeerName || '');
+  }, [currentPeerName]);
 
   const handleCopy = async () => {
     try {
@@ -81,6 +93,50 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
       }
       document.body.removeChild(textArea);
     }
+  };
+
+  const handleRenameDevice = () => {
+    updateDeviceName(deviceNameInput);
+    setIsEditingDeviceName(false);
+  };
+
+  const handleShareText = async () => {
+    if (!textValue.trim()) {
+      toast({
+        title: 'Text Required',
+        description: 'Enter text to share with other devices.',
+        variant: 'danger'
+      });
+      return;
+    }
+
+    setIsSending(true);
+    sendText(textValue.trim());
+    setTextValue('');
+    toast({
+      title: 'Sent!',
+      description: 'Message sent to the room.',
+      variant: 'success'
+    });
+    setTimeout(() => {
+      setIsSending(false);
+    }, 1200);
+  };
+
+  const handleChatKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      handleShareText();
+    }
+  };
+
+  const copyMessageText = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    toast({
+      title: 'Copied!',
+      description: 'Message copied to clipboard.',
+      variant: 'success'
+    });
   };
 
   const getConnectionBadge = () => {
@@ -206,6 +262,118 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
             <Col lg={8} className="order-2 order-lg-1">
               <FileUpload onUpload={uploadFiles} />
 
+              <Card className="mt-4">
+                <Card.Body>
+                  <div className="d-flex align-items-center justify-content-between gap-2 mb-3">
+                    <div className="d-flex align-items-center gap-2">
+                      <MessageSquareText size={18} style={{ width: 18, height: 18 }} className="text-primary" />
+                      <h2 className="h5 fw-bold mb-0">Chat</h2>
+                    </div>
+                    <Button
+                      variant={showChat ? 'outline-secondary' : 'primary'}
+                      size="sm"
+                      onClick={() => setShowChat(!showChat)}
+                      className="d-inline-flex align-items-center gap-2 rounded-pill"
+                      style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem', lineHeight: 1 }}
+                    >
+                      <span
+                        className="d-inline-block rounded-circle"
+                        style={{
+                          width: 8,
+                          height: 8,
+                          backgroundColor: showChat ? 'currentColor' : 'white'
+                        }}
+                      />
+                      {showChat ? 'Hide chat' : 'Open chat'}
+                    </Button>
+                  </div>
+                  {showChat ? (
+                  <div className="d-flex flex-column gap-3">
+                    <div
+                      className="rounded p-3 d-flex flex-column gap-2"
+                      style={{ minHeight: '260px', maxHeight: '360px', overflowY: 'auto', background: '#f8fafc', border: '1px solid rgba(148, 163, 184, 0.2)' }}
+                    >
+                      {textMessages.length === 0 ? (
+                        <div className="text-muted small text-center py-5">No messages yet.</div>
+                      ) : (
+                        textMessages.map(message => {
+                          const isMine = message.peerId === currentPeerId;
+                          return (
+                            <div key={message.id} className={`d-flex ${isMine ? 'justify-content-end' : 'justify-content-start'}`}>
+                              <div className={`d-flex align-items-end gap-2 ${isMine ? 'flex-row-reverse' : ''}`} style={{ maxWidth: '78%' }}>
+                                <div
+                                  className="px-3 py-2 rounded-4"
+                                  style={{
+                                    background: isMine ? '#2563eb' : 'white',
+                                    color: isMine ? 'white' : 'inherit',
+                                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.08)',
+                                    border: isMine ? 'none' : '1px solid rgba(148, 163, 184, 0.22)'
+                                  }}
+                                >
+                                  <div className="d-flex align-items-center justify-content-between gap-3 mb-1" style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+                                    <span className="fw-semibold">{isMine ? 'You' : message.peerName}</span>
+                                    <span className="d-inline-flex align-items-center gap-1">
+                                      <span>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                      {isMine && message.status === 'sent' && <CircleCheckBig size={10} style={{ width: 10, height: 10 }} />}
+                                      {isMine && message.status === 'pending' && <CircleAlert size={10} style={{ width: 10, height: 10 }} />}
+                                    </span>
+                                  </div>
+                                  <div style={{ whiteSpace: 'pre-wrap' }}>{message.text || message.message || ''}</div>
+                                </div>
+                                {showCopyOnSent && (
+                                  <Button
+                                    variant="outline-secondary"
+                                    size="sm"
+                                    className="rounded-circle flex-shrink-0 d-inline-flex align-items-center justify-content-center"
+                                    onClick={() => copyMessageText(message.text || message.message || '')}
+                                    title="Copy message"
+                                    style={{ width: 30, height: 30, padding: 0 }}
+                                  >
+                                    <ClipboardCopy size={12} style={{ width: 12, height: 12 }} />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="rounded p-2 d-flex align-items-end gap-2" style={{ background: '#f8fafc', border: '1px solid rgba(148, 163, 184, 0.2)' }}>
+                      <Form.Control
+                        as="textarea"
+                        rows={1}
+                        placeholder="Message"
+                        value={textValue}
+                        onChange={(e) => setTextValue(e.target.value)}
+                        onKeyDown={handleChatKeyDown}
+                        style={{ resize: 'none', border: 'none', boxShadow: 'none', background: 'transparent' }}
+                      />
+                      <Button
+                        variant="primary"
+                        onClick={handleShareText}
+                        disabled={isSending}
+                        className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                        style={{ width: 40, height: 40, padding: 0 }}
+                      >
+                        <Send size={16} style={{ width: 16, height: 16 }} />
+                      </Button>
+                    </div>
+                    <Form.Check
+                      type="checkbox"
+                      id="show-copy-on-sent"
+                      label="Show copy button on sent messages"
+                      checked={showCopyOnSent}
+                      onChange={(e) => setShowCopyOnSent(e.target.checked)}
+                      className="small text-muted"
+                    />
+                  </div>
+                  ) : (
+                    <div className="text-muted small">Chat is collapsed.</div>
+                  )}
+                </Card.Body>
+              </Card>
+
               <div className="mt-4">
                 <div className="d-flex align-items-center justify-content-between mb-3">
                   <h2 className="h5 fw-bold mb-0">
@@ -253,6 +421,15 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                     </div>
                   )}
 
+                  <Button
+                    variant="outline-primary"
+                    className="w-100 mb-3 d-flex align-items-center justify-content-center gap-2"
+                    onClick={handleShareText}
+                  >
+                    <Send size={16} style={{ width: 16, height: 16 }} />
+                    Share Text
+                  </Button>
+
                   <div className="d-flex align-items-center gap-2 p-3 rounded mb-3" style={{ background: 'rgba(100, 116, 139, 0.1)' }}>
                     <Clock size={18} style={{ width: 18, height: 18 }} className="text-muted flex-shrink-0" />
                     <div>
@@ -262,12 +439,44 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                   </div>
 
                   {currentPeerName && (
-                    <div className="d-flex align-items-center gap-2 p-3 rounded mb-3" style={{ background: 'rgba(59, 130, 246, 0.1)' }}>
-                      <Monitor size={18} style={{ width: 18, height: 18 }} className="text-primary flex-shrink-0" />
-                      <div>
-                        <div className="small fw-semibold text-primary">Your Device</div>
-                        <div className="text-muted small">{currentPeerName}</div>
+                    <div className="p-2 rounded mb-3 d-flex align-items-center justify-content-between gap-2" style={{ background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.1)' }}>
+                      <div className="d-flex align-items-center gap-2 min-w-0 flex-grow-1">
+                        <div className="rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: 28, height: 28 }}>
+                          <Monitor size={14} style={{ width: 14, height: 14 }} className="text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="small fw-semibold text-primary mb-0">Your Device</div>
+                          {!isEditingDeviceName ? (
+                            <div className="text-muted text-truncate" style={{ fontSize: '0.8rem' }}>{currentPeerName}</div>
+                          ) : (
+                            <Form.Control
+                              size="sm"
+                              value={deviceNameInput}
+                              onChange={(e) => setDeviceNameInput(e.target.value)}
+                              placeholder="Rename device"
+                            />
+                          )}
+                        </div>
                       </div>
+                      {!isEditingDeviceName ? (
+                        <Button
+                          variant="link"
+                          className="p-0 text-primary text-decoration-none"
+                          onClick={() => setIsEditingDeviceName(true)}
+                          style={{ fontSize: '0.8rem' }}
+                        >
+                          Edit
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="link"
+                          className="p-0 text-primary text-decoration-none"
+                          onClick={handleRenameDevice}
+                          style={{ fontSize: '0.8rem' }}
+                        >
+                          Save
+                        </Button>
+                      )}
                     </div>
                   )}
 
