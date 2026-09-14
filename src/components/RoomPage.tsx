@@ -297,7 +297,7 @@ export default function RoomPage({ roomCode }: RoomPageProps) {
                         <div className="text-muted small text-center py-5">No messages yet.</div>
                       ) : (
                         textMessages.map(message => {
-                          const isMine = message.peerId === currentPeerId;
+                          const isMine = message.peerId === currentPeerId || message.peerName === currentPeerName;
                           return (
                             <div key={message.id} className={`d-flex ${isMine ? 'justify-content-end' : 'justify-content-start'}`}>
                               <div className={`d-flex align-items-end gap-2 ${isMine ? 'flex-row-reverse' : ''}`} style={{ maxWidth: '78%' }}>
