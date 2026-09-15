@@ -24,7 +24,7 @@ export default function FileUpload({ onUpload, disabled = false }: FileUploadPro
   const handleFiles = (files: FileList | null) => {
     if (!files?.length) return;
     if (registrationPending.current) {
-      toast({ title: 'Creating file shares', description: 'Wait for the selected files to appear before adding more.', variant: 'info' });
+      toast({ title: 'Adding your files', description: 'Wait for the selected files to appear before adding more.', variant: 'info' });
       return;
     }
     if (disabled) {
@@ -97,7 +97,7 @@ export default function FileUpload({ onUpload, disabled = false }: FileUploadPro
           <p id="upload-limits">Up to {MAX_FILES} files at a time. {FILE_SIZE_LIMIT_LABEL} per file.</p>
         </div>
         <Button variant="outline-secondary" onClick={() => fileInputRef.current?.click()} disabled={disabled || registering} aria-describedby="upload-limits" aria-busy={registering}>
-          <Plus size={17} aria-hidden="true" /> {registering ? 'Creating shares...' : 'Choose files'}
+          <Plus size={17} aria-hidden="true" /> {registering ? 'Adding…' : 'Choose files'}
         </Button>
       </div>
     </section>

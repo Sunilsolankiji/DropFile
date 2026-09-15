@@ -127,7 +127,7 @@ test('file-added arriving before add-file acknowledgement keeps richer pushed me
   const { service, socket, events } = fixture(t);
   const pushed = share({
     status: 'transferring',
-    transfer: { state: 'transferring', uploadedChunks: 2, acknowledgedChunks: 1, receiverConnected: true }
+    transfer: { state: 'transferring', uploadedChunks: 2, acknowledgedChunks: 1, activeReceivers: 1, receiverPeerIds: ['peer2'] }
   });
   socket.handlers.set('add-file', (_payload, callback) => {
     socket.push('file-added', pushed);
@@ -233,6 +233,33 @@ test('transfer pushes forward counts without inventing index sets and completion
   assert.equal(service.getFiles()[0].transfer.state, 'completed');
   assert.equal(events.onTransferCompleted[0][0].status.state, 'completed');
   assert.equal(events.onFilesChanged.length, 2);
+});
+
+test('peer-scoped completion updates receiver bookkeeping without disabling the shared file', t => {
+  const { service, socket, events } = fixture(t);
+  service.files.set('file1', share());
+  const base = { fileId: 'file1', transferId: 'transfer1' };
+
+  // Another receiver finishing must not complete the file for everyone, and must forward as an update.
+  socket.push('transfer-completed', {
+    ...base, peerId: 'peer2',
+    status: { state: 'transferring', uploadedChunks: 3, acknowledgedChunks: 3, activeReceivers: 1, completedReceiverPeerIds: ['peer2'] }
+  });
+  assert.notEqual(service.getFiles()[0].status, 'completed');
+  assert.notEqual(service.getFiles()[0].transfer.state, 'completed');
+  assert.deepEqual(service.getFiles()[0].transfer.completedReceiverPeerIds, ['peer2']);
+  assert.equal(events.onTransferCompleted.length, 0);
+  assert.equal(events.onTransferUpdated.length, 1);
+
+  // The local receiver finishing is forwarded as a completion but still not a global terminal state.
+  socket.push('transfer-completed', {
+    ...base, peerId: 'peer1',
+    status: { state: 'transferring', uploadedChunks: 3, acknowledgedChunks: 3, completedReceiverPeerIds: ['peer2', 'peer1'] }
+  });
+  assert.notEqual(service.getFiles()[0].status, 'completed');
+  assert.deepEqual(service.getFiles()[0].transfer.completedReceiverPeerIds, ['peer2', 'peer1']);
+  assert.equal(events.onTransferCompleted.length, 1);
+  assert.equal(events.onTransferCompleted[0][0].status.state, 'completed');
 });
 
 test('invalid transfer pushes report errors without changing connection or file state', t => {

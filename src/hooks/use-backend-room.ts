@@ -9,6 +9,7 @@ import { NetworkPeerService, NetworkPeer, SharedTextMessage } from '@/lib/networ
 import { TransferManager } from '@/lib/transfer-manager';
 import { IndexedDbTransferStorage } from '@/lib/transfer-storage';
 import type { ShareMetadata, TransferState } from '@/lib/transfer-types';
+import { generateDeviceName } from '@/lib/utils';
 
 export type SharedFile = ShareMetadata;
 
@@ -28,7 +29,7 @@ const DEVICE_ID_KEY = 'dropfile_device_id';
 function getOrCreateDeviceName(): string {
   let deviceName = localStorage.getItem(DEVICE_NAME_KEY);
   if (!deviceName) {
-    deviceName = 'Device ' + Math.random().toString(36).substr(2, 5);
+    deviceName = generateDeviceName();
     localStorage.setItem(DEVICE_NAME_KEY, deviceName);
   }
   return deviceName;

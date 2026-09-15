@@ -7,6 +7,23 @@ export function generateAccessCode(): string {
   return result;
 }
 
+const DEVICE_NAME_ADJECTIVES = [
+  'Tez', 'Toofani', 'Bijli', 'Shaandaar', 'Mast', 'Zabardast', 'Jhakaas',
+  'Bindaas', 'Rangeela', 'Dhinchak', 'Jugaadu', 'Phataka', 'Chulbul', 'Rocket',
+];
+
+const DEVICE_NAME_NOUNS = [
+  'Cheetah', 'Chetak', 'Sher', 'Baaz', 'Mor', 'Hathi', 'Nilgai', 'Tendua',
+  'Garuda', 'Nandi', 'Cobra', 'Magar', 'Kabootar', 'Ghoda',
+];
+
+// Build a friendly, creative Indian-flavoured device name (e.g. "Toofani Cheetah").
+export function generateDeviceName(): string {
+  const adjective = DEVICE_NAME_ADJECTIVES[Math.floor(Math.random() * DEVICE_NAME_ADJECTIVES.length)];
+  const noun = DEVICE_NAME_NOUNS[Math.floor(Math.random() * DEVICE_NAME_NOUNS.length)];
+  return `${adjective} ${noun}`;
+}
+
 export function formatFileSize(bytes: number, decimals = 2): string {
   if (bytes === 0) return '0 Bytes';
 

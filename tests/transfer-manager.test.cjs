@@ -201,24 +201,24 @@ function mockTime(t) {
   return ms => t.mock.timers.tick(ms);
 }
 
-for (const size of [1024 ** 3 - 1, 1024 ** 3, 1024 ** 3 + 1]) {
+for (const size of [2 * 1024 ** 3 - 1, 2 * 1024 ** 3, 2 * 1024 ** 3 + 1]) {
   test(`file size gate handles ${size} bytes before sending metadata`, async t => {
     const relay = new Relay(1024 * 1024);
     const h = harness(t, relay);
     const file = source(1);
-    // Exercise the metadata boundary without allocating a gigabyte of test data.
+    // Exercise the metadata boundary without allocating gigabytes of test data.
     Object.defineProperty(file, 'size', { value: size });
     file.slice = () => assert.fail('Size validation must not read file bytes');
     h.manager.setConnected(true);
     const accepted = await h.manager.upload(file);
     if (accepted) h.manager.pause('transfer-1');
-    assert.equal(accepted, size <= 1024 ** 3);
+    assert.equal(accepted, size <= 2 * 1024 ** 3);
     assert.equal(relay.transfers.size, accepted ? 1 : 0);
     if (accepted) {
       assert.equal(relay.transfers.get('transfer-1').file.size, size);
-      assert.equal(relay.transfers.get('transfer-1').file.totalChunks, 1024);
+      assert.equal(relay.transfers.get('transfer-1').file.totalChunks, 2048);
     } else {
-      assert.match(h.errors.at(-1), /1 GB or smaller/);
+      assert.match(h.errors.at(-1), /2 GB or smaller/);
     }
     await flush();
     assert.equal(relay.requests.length, 0);
@@ -673,31 +673,26 @@ test('hard HTTP failure does not hang on an endless error body and releases its 
   assert.equal(relay.requests.length, 2);
 });
 
-test('receiver-offline push stops sender workers and immediate receiver reconnect restarts exactly once', async t => {
+test('receiver churn updates sender receiver info without disrupting the upload', async t => {
   const relay = new Relay(4);
-  let hold = true;
-  relay.intercept = async (request, respond) => hold ? abortable(request.signal) : respond();
   const h = harness(t, relay);
   h.manager.setConnected(true);
   await h.manager.upload(source(19));
-  await until(() => relay.requests.length === 4);
-  const update = {
-    transferId: 'transfer-1', fileId: relay.transfers.get('transfer-1').file.id,
+  const fileId = relay.transfers.get('transfer-1').file.id;
+  const notify = (activeReceivers, receiverPeerIds) => h.manager.handleUpdate({
+    transferId: 'transfer-1', fileId,
     status: {
-      state: 'receiver-offline', uploadedChunks: 0, acknowledgedChunks: 0,
-      senderConnected: true, receiverConnected: false, receiverPeerId: 'receiver',
+      state: 'transferring', uploadedChunks: 0, acknowledgedChunks: 0,
+      senderConnected: true, activeReceivers, receiverPeerIds,
     },
-  };
-  h.manager.handleUpdate(update);
-  assert.equal(h.states.get('transfer-1').state, 'receiver-offline');
-  assert.ok(relay.requests.every(request => request.signal.aborted));
-  hold = false;
-  update.status = { ...update.status, state: 'ready', receiverConnected: true };
-  h.manager.handleUpdate(update);
-  h.manager.handleUpdate(update);
+  });
+  // Multiple receivers join and one leaves; the sender must keep uploading either way.
+  notify(2, ['receiver-a', 'receiver-b']);
+  notify(1, ['receiver-a']);
+  assert.ok(relay.requests.every(request => !request.signal.aborted));
   await until(() => uploadFinished(h.states.get('transfer-1')));
-  assert.equal(relay.requests.length, 9);
-  assert.deepEqual(sorted(relay.requests.slice(4).map(request => request.index)), [0, 1, 2, 3, 4]);
+  assert.equal(h.states.get('transfer-1').activeReceivers, 1);
+  assert.deepEqual(h.states.get('transfer-1').receiverPeerIds, ['receiver-a']);
   assert.deepEqual(h.errors, []);
 });
 
@@ -928,6 +923,29 @@ test('receiver assembles durable chunks even when a completed push precedes snap
   assert.equal(h.states.get('transfer-1').state, 'completed');
   assert.equal(relay.requests.length, 0);
   assert.equal(h.downloads.length, 1);
+});
+
+test('a completion scoped to another receiver only refreshes shared bookkeeping and never completes this peer', async t => {
+  const relay = new Relay(4);
+  const file = source(7);
+  const transfer = await relay.seed(file, []);
+  const storage = new MemoryTransferStorage();
+  await storage.save(record(transfer, 'receiver', { acknowledgedChunks: [0] }));
+  await storage.putChunk('transfer-1', 0, file.slice(0, 4));
+  const h = harness(t, relay, 'receiver', storage);
+  await h.manager.restore();
+  const before = h.states.get('transfer-1').state;
+  h.manager.handleUpdate({
+    transferId: 'transfer-1', fileId: transfer.file.id, peerId: 'someone-else',
+    status: { state: 'transferring', uploadedChunks: 0, acknowledgedChunks: 3, activeReceivers: 2, completedReceiverPeerIds: ['someone-else'] },
+  }, true);
+  await flush();
+  assert.equal(h.states.get('transfer-1').state, before);
+  assert.notEqual(h.states.get('transfer-1').state, 'completed');
+  assert.deepEqual(h.states.get('transfer-1').completedReceiverPeerIds, ['someone-else']);
+  assert.equal(h.states.get('transfer-1').activeReceivers, 2);
+  assert.equal(h.downloads.length, 0);
+  assert.deepEqual(h.errors, []);
 });
 
 test('authoritative ACK without a durable local chunk fails instead of fabricating a complete file', async t => {

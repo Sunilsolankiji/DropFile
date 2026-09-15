@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Offcanvas, Spinner } from 'react-bootstrap';
-import { Check, CircleAlert, Clock, Copy, MessageSquare, Share2, Users } from 'lucide-react';
+import { Check, CircleAlert, Clock, Copy, MessageSquare, Monitor, Share2, Users } from 'lucide-react';
 import AppHeader from './AppHeader';
 import ChatPanel from './ChatPanel';
 import FileUpload from './FileUpload';
@@ -131,6 +131,7 @@ export default function RoomPage({ roomCode }: { roomCode: string }) {
               <span className="visually-hidden" role="status">{copiedText === roomCode ? 'Room code copied' : ''}</span>
             </div>
             <div className="room-meta">
+              <span className="device-summary" title="This device's name"><Monitor size={14} aria-hidden="true" />{currentPeerName || 'This device'}</span>
               <span className={`connection-status ${isConnected ? 'is-connected' : !loading ? 'is-offline' : ''}`} role="status"><span className="status-dot" aria-hidden="true" />{isConnected ? 'Connected' : loading ? 'Connecting...' : 'Not connected'}</span>
               {isConnected && <span className="device-summary"><Users size={14} aria-hidden="true" />{peerCount} device{peerCount === 1 ? '' : 's'}</span>}
             </div>
