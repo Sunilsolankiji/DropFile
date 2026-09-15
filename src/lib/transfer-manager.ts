@@ -489,8 +489,8 @@ export class TransferManager {
       || snapshot.chunkSize !== file.chunkSize || snapshot.summary.totalChunks !== file.totalChunks) {
       throw new TransferFailure('Transfer state changed unexpectedly. Share the file again.', 'failed', true);
     }
-    entry.record.uploadedChunks = indexes(snapshot.summary.uploadedChunkIndexes, file.totalChunks);
-    entry.record.acknowledgedChunks = indexes(snapshot.summary.acknowledgedChunkIndexes, file.totalChunks);
+    entry.record.uploadedChunks = indexes(snapshot.uploadedChunkIndexes, file.totalChunks);
+    entry.record.acknowledgedChunks = indexes(snapshot.acknowledgedChunkIndexes, file.totalChunks);
     entry.remoteUploaded = new Set([...entry.record.uploadedChunks, ...entry.record.acknowledgedChunks]).size;
     entry.remoteAcknowledged = entry.record.acknowledgedChunks.length;
     entry.snapshotReceived = true;

@@ -80,9 +80,11 @@ class Relay {
       state: transfer.state, chunkSize: transfer.file.chunkSize,
       summary: {
         totalChunks: transfer.file.totalChunks,
-        uploadedChunkIndexes: [...transfer.uploaded].reverse(),
-        acknowledgedChunkIndexes: [...transfer.acknowledged].reverse(),
+        uploadedChunks: [...transfer.uploaded].reverse(),
+        acknowledgedChunks: [...transfer.acknowledged].reverse(),
       },
+      uploadedChunkIndexes: [...transfer.uploaded].reverse(),
+      acknowledgedChunkIndexes: [...transfer.acknowledged].reverse(),
     };
   }
 
@@ -991,7 +993,7 @@ for (const invalid of [2, [0, 3], [-1], [1.5]]) {
     const snapshot = h.client.getTransferState;
     h.client.getTransferState = async id => {
       const state = await snapshot(id);
-      state.summary.uploadedChunkIndexes = invalid;
+      state.uploadedChunkIndexes = invalid;
       return state;
     };
     h.manager.setConnected(true);

@@ -80,7 +80,8 @@ function snapshot(overrides = {}) {
   return {
     success: true, fileId: 'file1', transferId: 'transfer1', roomCode: 'room',
     chunkSize: 4, state: 'transferring',
-    summary: { totalChunks: 3, uploadedChunkIndexes: [0, 2], acknowledgedChunkIndexes: [0] }, ...overrides
+    summary: { totalChunks: 3, uploadedChunks: [0, 2], acknowledgedChunks: [0] },
+    uploadedChunkIndexes: [0, 2], acknowledgedChunkIndexes: [0], ...overrides
   };
 }
 
@@ -170,7 +171,7 @@ test('start/state requests await callbacks and use exact control payloads', asyn
   socket.respond('get-transfer-state', snapshot());
   const state = await service.getTransferState('transfer1');
   assert.deepEqual(socket.sent.at(-1).payload, { transferId: 'transfer1' });
-  assert.deepEqual(state.summary.acknowledgedChunkIndexes, [0]);
+  assert.deepEqual(state.acknowledgedChunkIndexes, [0]);
 });
 
 test('start/state reject chunk counts, duplicate/out-of-range indexes, and mismatched IDs', async t => {
@@ -181,7 +182,7 @@ test('start/state reject chunk counts, duplicate/out-of-range indexes, and misma
       socket.respond('start-transfer', started({ [field]: indexes }));
       await assert.rejects(service.startTransfer('file1'), /index arrays/);
       const state = snapshot();
-      state.summary[field] = indexes;
+      state[field] = indexes;
       socket.respond('get-transfer-state', state);
       await assert.rejects(service.getTransferState('transfer1'), /index arrays/);
     }

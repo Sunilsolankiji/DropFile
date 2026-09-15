@@ -81,9 +81,11 @@ export interface TransferSnapshot {
   chunkSize: number;
   summary: {
     totalChunks: number;
-    uploadedChunkIndexes: number[];
-    acknowledgedChunkIndexes: number[];
+    uploadedChunks: number[];
+    acknowledgedChunks: number[];
   };
+  uploadedChunkIndexes: number[];
+  acknowledgedChunkIndexes: number[];
 }
 
 export interface TransferUpdate {

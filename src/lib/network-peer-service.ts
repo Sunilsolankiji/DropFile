@@ -567,8 +567,8 @@ export class NetworkPeerService implements TransferClient {
     if (file && (file.chunkSize !== response.chunkSize || file.totalChunks !== response.summary.totalChunks)) {
       throw new Error('Transfer metadata mismatch');
     }
-    this.validateIndexes(response.summary.uploadedChunkIndexes, response.summary.totalChunks);
-    this.validateIndexes(response.summary.acknowledgedChunkIndexes, response.summary.totalChunks);
+    this.validateIndexes(response.uploadedChunkIndexes, response.summary.totalChunks);
+    this.validateIndexes(response.acknowledgedChunkIndexes, response.summary.totalChunks);
     return response;
   }
 
