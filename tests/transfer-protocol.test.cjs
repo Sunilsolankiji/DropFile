@@ -71,7 +71,7 @@ function share(overrides = {}) {
 function started(overrides = {}) {
   return {
     success: true, fileId: 'file1', transferId: 'transfer1', chunkSize: 4, totalChunks: 3,
-    state: 'transferring', uploadedChunks: [0, 2], acknowledgedChunks: [0],
+    state: 'transferring', uploadedChunkIndexes: [0, 2], acknowledgedChunkIndexes: [0],
     downloadUrlTemplate: '/api/transfers/{transferId}/chunks/{chunkIndex}', ...overrides
   };
 }
@@ -80,7 +80,7 @@ function snapshot(overrides = {}) {
   return {
     success: true, fileId: 'file1', transferId: 'transfer1', roomCode: 'room',
     chunkSize: 4, state: 'transferring',
-    summary: { totalChunks: 3, uploadedChunks: [0, 2], acknowledgedChunks: [0] }, ...overrides
+    summary: { totalChunks: 3, uploadedChunkIndexes: [0, 2], acknowledgedChunkIndexes: [0] }, ...overrides
   };
 }
 
@@ -166,18 +166,18 @@ test('start/state requests await callbacks and use exact control payloads', asyn
   assert.equal(settled, false);
   assert.deepEqual(socket.sent[0].payload, { roomCode: 'room', fileId: 'file1', peerId: 'peer1' });
   answer(started());
-  assert.deepEqual((await pending).uploadedChunks, [0, 2]);
+  assert.deepEqual((await pending).uploadedChunkIndexes, [0, 2]);
   socket.respond('get-transfer-state', snapshot());
   const state = await service.getTransferState('transfer1');
   assert.deepEqual(socket.sent.at(-1).payload, { transferId: 'transfer1' });
-  assert.deepEqual(state.summary.acknowledgedChunks, [0]);
+  assert.deepEqual(state.summary.acknowledgedChunkIndexes, [0]);
 });
 
 test('start/state reject chunk counts, duplicate/out-of-range indexes, and mismatched IDs', async t => {
   const { service, socket } = fixture(t);
   service.files.set('file1', share());
   for (const indexes of [2, [0, 0], [-1], [3], [1.5]]) {
-    for (const field of ['uploadedChunks', 'acknowledgedChunks']) {
+    for (const field of ['uploadedChunkIndexes', 'acknowledgedChunkIndexes']) {
       socket.respond('start-transfer', started({ [field]: indexes }));
       await assert.rejects(service.startTransfer('file1'), /index arrays/);
       const state = snapshot();

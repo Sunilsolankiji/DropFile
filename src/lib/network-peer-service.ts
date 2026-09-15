@@ -541,8 +541,8 @@ export class NetworkPeerService implements TransferClient {
       throw new Error('Transfer metadata mismatch');
     }
     if (typeof response.state !== 'string' || !response.state) throw new Error('Invalid transfer state');
-    this.validateIndexes(response.uploadedChunks, response.totalChunks);
-    this.validateIndexes(response.acknowledgedChunks, response.totalChunks);
+    this.validateIndexes(response.uploadedChunkIndexes, response.totalChunks);
+    this.validateIndexes(response.acknowledgedChunkIndexes, response.totalChunks);
     this.getChunkUrl(response.downloadUrlTemplate, response.transferId, 0);
     return response;
   }
@@ -567,8 +567,8 @@ export class NetworkPeerService implements TransferClient {
     if (file && (file.chunkSize !== response.chunkSize || file.totalChunks !== response.summary.totalChunks)) {
       throw new Error('Transfer metadata mismatch');
     }
-    this.validateIndexes(response.summary.uploadedChunks, response.summary.totalChunks);
-    this.validateIndexes(response.summary.acknowledgedChunks, response.summary.totalChunks);
+    this.validateIndexes(response.summary.uploadedChunkIndexes, response.summary.totalChunks);
+    this.validateIndexes(response.summary.acknowledgedChunkIndexes, response.summary.totalChunks);
     return response;
   }
 

@@ -67,8 +67,8 @@ export interface StartedTransfer {
   totalChunks: number;
   state: string;
   downloadUrlTemplate: string;
-  uploadedChunks: number[];
-  acknowledgedChunks: number[];
+  uploadedChunkIndexes: number[];
+  acknowledgedChunkIndexes: number[];
 }
 
 export interface TransferSnapshot {
@@ -81,8 +81,8 @@ export interface TransferSnapshot {
   chunkSize: number;
   summary: {
     totalChunks: number;
-    uploadedChunks: number[];
-    acknowledgedChunks: number[];
+    uploadedChunkIndexes: number[];
+    acknowledgedChunkIndexes: number[];
   };
 }
 

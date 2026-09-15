@@ -351,8 +351,8 @@ export class TransferManager {
         transferId: started.transferId, fileId: file.id, roomCode: file.roomCode, peerId: this.client.getPeerId(),
         file: { ...file, transferId: started.transferId }, role: 'receiver',
         state: initialState === 'completed' ? 'transferring' : 'pending', paused: false,
-        uploadedChunks: indexes(started.uploadedChunks, file.totalChunks),
-        acknowledgedChunks: indexes(started.acknowledgedChunks, file.totalChunks),
+        uploadedChunks: indexes(started.uploadedChunkIndexes, file.totalChunks),
+        acknowledgedChunks: indexes(started.acknowledgedChunkIndexes, file.totalChunks),
         downloadUrlTemplate: started.downloadUrlTemplate,
       });
       if (stopped.has(initialState) && initialState !== 'completed') {
@@ -489,8 +489,8 @@ export class TransferManager {
       || snapshot.chunkSize !== file.chunkSize || snapshot.summary.totalChunks !== file.totalChunks) {
       throw new TransferFailure('Transfer state changed unexpectedly. Share the file again.', 'failed', true);
     }
-    entry.record.uploadedChunks = indexes(snapshot.summary.uploadedChunks, file.totalChunks);
-    entry.record.acknowledgedChunks = indexes(snapshot.summary.acknowledgedChunks, file.totalChunks);
+    entry.record.uploadedChunks = indexes(snapshot.summary.uploadedChunkIndexes, file.totalChunks);
+    entry.record.acknowledgedChunks = indexes(snapshot.summary.acknowledgedChunkIndexes, file.totalChunks);
     entry.remoteUploaded = new Set([...entry.record.uploadedChunks, ...entry.record.acknowledgedChunks]).size;
     entry.remoteAcknowledged = entry.record.acknowledgedChunks.length;
     entry.snapshotReceived = true;
