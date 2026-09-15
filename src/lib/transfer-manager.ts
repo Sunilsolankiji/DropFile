@@ -30,7 +30,7 @@ interface ManagerOptions {
 }
 
 const terminal = new Set<TransferPhase>(['completed', 'cancelled', 'expired', 'removed', 'sender-timeout']);
-const stopped = new Set<TransferPhase>([...terminal, 'failed', 'offline', 'sender-offline', 'receiver-offline']);
+const stopped = new Set<TransferPhase>([...terminal, 'failed', 'offline', 'sender-offline']);
 
 class TransferFailure extends Error {
   constructor(message: string, readonly phase: TransferPhase = 'failed', readonly discard = false) {
@@ -42,7 +42,7 @@ function phase(value: string): TransferPhase {
   switch (value) {
     case 'pending': case 'ready': case 'transferring': case 'completed':
     case 'cancelled': case 'expired': case 'removed': case 'failed':
-    case 'sender-offline': case 'sender-timeout': case 'receiver-offline':
+    case 'sender-offline': case 'sender-timeout':
       return value;
     default:
       throw new TransferFailure(`Unsupported transfer state "${value}". Update the client or share this file again.`);
@@ -166,8 +166,9 @@ export class TransferManager {
       inFlightChunks: [...entry.inFlight],
       failedChunks: [...entry.failed],
       senderConnected: entry.record.senderConnected,
-      receiverConnected: entry.record.receiverConnected,
-      receiverPeerId: entry.record.receiverPeerId,
+      activeReceivers: entry.record.activeReceivers,
+      receiverPeerIds: entry.record.receiverPeerIds,
+      completedReceiverPeerIds: entry.record.completedReceiverPeerIds,
       cancelReason: entry.record.cancelReason,
       error: entry.record.error,
     })), [...this.entries.values()].filter(entry => entry.record.state !== 'removed').map(entry => entry.record.file));
@@ -263,8 +264,16 @@ export class TransferManager {
     entry.remoteUploaded = update.status.uploadedChunks;
     entry.remoteAcknowledged = update.status.acknowledgedChunks;
     entry.record.senderConnected = update.status.senderConnected;
-    entry.record.receiverConnected = update.status.receiverConnected;
-    entry.record.receiverPeerId = update.status.receiverPeerId;
+    entry.record.activeReceivers = update.status.activeReceivers;
+    entry.record.receiverPeerIds = update.status.receiverPeerIds;
+    entry.record.completedReceiverPeerIds = update.status.completedReceiverPeerIds;
+    // A peerId scopes this update to one specific receiver. If it is not us, only refresh
+    // shared bookkeeping (receiver counts) and never touch this peer's own transfer state.
+    const scopedPeerId = typeof update.peerId === 'string' && update.peerId.trim() ? update.peerId : undefined;
+    if (scopedPeerId !== undefined && scopedPeerId !== this.client.getPeerId()) {
+      this.emit();
+      return;
+    }
     try {
       const next = completed ? 'completed' : phase(update.status.state);
       if (next === 'completed') {
@@ -277,15 +286,7 @@ export class TransferManager {
         entry.record.state = 'sender-offline';
         entry.record.error = update.reason || 'The sender is offline. Resume when the sender reconnects.';
         entry.controller?.abort();
-      } else if (next === 'receiver-offline' || (update.status.receiverConnected === false && !!update.status.receiverPeerId)) {
-        entry.record.state = 'receiver-offline';
-        entry.record.error = update.reason || 'The receiver is offline. Resume when the receiver reconnects.';
-        entry.controller?.abort();
       } else if (entry.record.state === 'sender-offline' && update.status.senderConnected === true) {
-        entry.record.state = next;
-        entry.record.error = undefined;
-        this.launch(entry);
-      } else if (entry.record.state === 'receiver-offline' && update.status.receiverConnected === true) {
         entry.record.state = next;
         entry.record.error = undefined;
         this.launch(entry);
@@ -300,7 +301,7 @@ export class TransferManager {
     let entry: Entry | undefined;
     try {
       if (!this.connected || !this.client.isConnected()) throw new TransferFailure('Connect to the room before sharing a file.');
-      if (file.size > MAX_FILE_SIZE) throw new TransferFailure('Files must be 1 GB or smaller.');
+      if (file.size > MAX_FILE_SIZE) throw new TransferFailure('Files must be 2 GB or smaller.');
       const type = file.type || DEFAULT_FILE_TYPE;
       const created = await this.client.createFileShare({
         name: file.name, size: file.size, type,
@@ -495,7 +496,7 @@ export class TransferManager {
     entry.snapshotReceived = true;
     const state = phase(snapshot.state);
     if (stopped.has(state) && state !== 'completed') {
-      throw new TransferFailure(`Transfer ${state}. ${state === 'sender-offline' || state === 'receiver-offline' ? 'Resume when the other device reconnects.' : 'Ask the sender to share the file again.'}`, state, terminal.has(state));
+      throw new TransferFailure(`Transfer ${state}. ${state === 'sender-offline' ? 'Resume when the sender reconnects.' : 'Ask the sender to share the file again.'}`, state, terminal.has(state));
     }
     if (state === 'completed' && entry.record.role === 'receiver') {
       entry.record.state = 'transferring';

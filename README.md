@@ -8,7 +8,7 @@ A React + Vite application for file sharing via access codes. Socket.IO manages 
 
 - **Create Rooms**: Start sharing in one click, or expand "Use a custom code" for a memorable code
 - **Join Rooms**: Enter an access code to join an existing file sharing room
-- **Drag & Drop Upload**: Drop files or use the keyboard-accessible file picker (up to 10 files at a time, 1 GB per file)
+- **Drag & Drop Upload**: Drop files or use the keyboard-accessible file picker (up to 10 files at a time, 2 GB per file)
 - **Cross-Device Sharing**: Share files between any devices connected to the same backend
 - **Resumable Transfers**: Chunk progress, pause/resume, cancellation, and durable receiver storage
 - **Real-time Updates**: Files sync instantly across all connected clients via Socket.IO
@@ -89,14 +89,14 @@ Raw file chunks use HTTP POST/GET with the device's `x-peer-id` header; no whole
 2. **Create a Share**: Device A sends metadata with `add-file` and accepts the backend's negotiated chunk size (1 MB requested by default).
    Files without a browser-provided MIME type use `application/octet-stream`.
 3. **Upload Chunks**: The sender slices the file and uploads raw chunks, with at most four HTTP requests active per browser transfer manager.
-4. **Receive Chunks**: Device B uses `start-transfer`, saves each received chunk in IndexedDB, then sends `ack-transfer-chunk`.
+4. **Receive Chunks**: Each downloading device uses `start-transfer`, saves each received chunk in IndexedDB, then sends `ack-transfer-chunk`. Multiple room members can download the same file at the same time; every receiver progresses independently.
 5. **Finish**: After all chunks are present and acknowledged, the receiver assembles the file in chunk-index order and hands it to the browser's download manager.
 
 ### Transfer controls and recovery
 
 Both devices should remain in the room until the transfer finishes. The backend is an online relay, not permanent file storage.
 Sender-offline states stop requests and display an error. Local IndexedDB data does not guarantee that the backend session remains available; recovery requires a valid server snapshot, otherwise share the file again.
-Sender and receiver progress are shown independently. Pause stops local requests without cancelling the session; Cancel stops the session for both devices.
+Sender and receiver progress are shown independently, and one receiver's download never blocks another's. Pause stops local requests without cancelling the session; Cancel stops the session for both devices.
 Offline cancellation stops local work immediately and is sent to the backend after reconnection.
 Removing a share, expiry, cancellation, or a sender timeout stops its workers and clears associated stored transfer data.
 
@@ -114,7 +114,7 @@ Non-retryable errors stop the transfer with a visible reason.
 
 ### Backend deployment requirements
 
-Default backend limits are 1 GB per file (1,073,741,824 bytes), 1 MB chunks (4 MB maximum),
+Default backend limits are 2 GB per file (2,147,483,648 bytes), 1 MB chunks (4 MB maximum),
 8 in-flight chunks, a 64 MB relay buffer, and a 60-minute lifetime.
 The frontend keeps a four-request window and uses the backend's returned chunk layout and `expiresAt`,
 not a locally assumed expiry. Large downloads require sufficient browser storage and memory for final Blob assembly.

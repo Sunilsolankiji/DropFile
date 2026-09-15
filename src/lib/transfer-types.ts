@@ -1,20 +1,21 @@
 export const DEFAULT_CHUNK_SIZE = 1024 * 1024;
 export const TRANSFER_CONCURRENCY = 4;
-export const MAX_FILE_SIZE = 1024 * 1024 * 1024;
+export const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 export const DEFAULT_FILE_TYPE = 'application/octet-stream';
 
 export type TransferRole = 'sender' | 'receiver';
 export type TransferPhase =
   | 'pending' | 'ready' | 'transferring' | 'completed'
   | 'cancelled' | 'expired' | 'removed' | 'failed'
-  | 'offline' | 'sender-offline' | 'sender-timeout' | 'receiver-offline';
+  | 'offline' | 'sender-offline' | 'sender-timeout';
 
 export interface TransferStatus {
   state: string;
   uploadedChunks: number;
   acknowledgedChunks: number;
-  receiverPeerId?: string;
-  receiverConnected?: boolean;
+  activeReceivers?: number;
+  receiverPeerIds?: string[];
+  completedReceiverPeerIds?: string[];
   senderConnected?: boolean;
 }
 
@@ -89,6 +90,7 @@ export interface TransferUpdate {
   transferId: string;
   fileId: string;
   status: TransferStatus;
+  peerId?: string;
   chunkIndex?: number;
   reason?: string;
 }
@@ -125,8 +127,9 @@ export interface TransferRecord {
   cancelPending?: boolean;
   error?: string;
   senderConnected?: boolean;
-  receiverConnected?: boolean;
-  receiverPeerId?: string;
+  activeReceivers?: number;
+  receiverPeerIds?: string[];
+  completedReceiverPeerIds?: string[];
 }
 
 export interface TransferState {
@@ -145,8 +148,9 @@ export interface TransferState {
   inFlightChunks: number[];
   failedChunks: number[];
   senderConnected?: boolean;
-  receiverConnected?: boolean;
-  receiverPeerId?: string;
+  activeReceivers?: number;
+  receiverPeerIds?: string[];
+  completedReceiverPeerIds?: string[];
   cancelReason?: string;
   error?: string;
 }

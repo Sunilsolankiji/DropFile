@@ -7,6 +7,7 @@
 
 import io, { Socket } from 'socket.io-client';
 import { DEFAULT_FILE_TYPE } from './transfer-types';
+import { generateDeviceName } from './utils';
 import type {
   CreatedTransfer, FileMetadata, ShareMetadata, StartedTransfer,
   TransferClient, TransferSnapshot, TransferUpdate
@@ -110,7 +111,7 @@ export class NetworkPeerService implements TransferClient {
     peerId?: string
   ) {
     this.peerId = peerId || this.generatePeerId();
-    this.peerName = peerName || `Device ${this.peerId.slice(0, 6)}`;
+    this.peerName = peerName || generateDeviceName();
     this.roomCode = roomCode;
     this.serverUrl = serverUrl;
 
@@ -432,20 +433,48 @@ export class NetworkPeerService implements TransferClient {
       this.onTransferError('Invalid transfer update: transfer ID mismatch or chunk counts out of bounds');
       return;
     }
-    const next = completed
-      ? { ...update, status: { ...update.status, state: 'completed' } }
-      : update;
+    if (update.peerId !== undefined && (typeof update.peerId !== 'string' || !update.peerId.trim())) {
+      this.onTransferError('Invalid transfer update: peerId must be a non-empty string when present');
+      return;
+    }
+    // A peerId means this update describes one specific receiver, not the shared file.
+    const scopedPeerId = typeof update.peerId === 'string' && update.peerId.trim() ? update.peerId : undefined;
+    const scopedToOther = scopedPeerId !== undefined && scopedPeerId !== this.peerId;
+
     if (file) {
-      this.files.set(file.id, {
-        ...file,
-        status: next.status.state,
-        transfer: { ...file.transfer, ...next.status }
-      });
+      if (scopedPeerId !== undefined) {
+        // Receiver-scoped: update shared bookkeeping only, never the global lifecycle/availability.
+        const completedReceivers = new Set(file.transfer?.completedReceiverPeerIds ?? []);
+        if (completed) completedReceivers.add(scopedPeerId);
+        this.files.set(file.id, {
+          ...file,
+          transfer: {
+            ...file.transfer,
+            ...update.status,
+            // Preserve the shared lifecycle state; a single receiver cannot change it.
+            state: file.transfer?.state ?? update.status.state,
+            completedReceiverPeerIds: [...completedReceivers],
+          },
+        });
+      } else {
+        // Shared/sender-driven update: drives global availability for everyone.
+        const state = completed ? 'completed' : update.status.state;
+        this.files.set(file.id, {
+          ...file,
+          status: state,
+          transfer: { ...file.transfer, ...update.status, state },
+        });
+      }
       this.onFilesChanged(Array.from(this.files.values()));
     }
+
     // Push counts and chunkIndex are notifications, never authoritative index sets.
-    if (completed) this.onTransferCompleted(next);
-    else this.onTransferUpdated(next);
+    if (completed && !scopedToOther) {
+      this.onTransferCompleted({ ...update, status: { ...update.status, state: 'completed' } });
+    } else {
+      // Another receiver's completion only refreshes shared receiver bookkeeping locally.
+      this.onTransferUpdated(update);
+    }
   }
 
   async createFileShare(file: FileMetadata): Promise<CreatedTransfer> {
