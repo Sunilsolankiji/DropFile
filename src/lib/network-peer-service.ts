@@ -59,6 +59,9 @@ interface TextConfirmation<Response extends ServerResponse> {
 
 const HEARTBEAT_INTERVAL = 5000; // 5 seconds
 const ACK_TIMEOUT = 30000;
+// Render's free tier can sleep and take a while to wake up, so the initial
+// connection is given a longer budget than individual request acknowledgements.
+const CONNECT_TIMEOUT = 90000;
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected';
 
 export class NetworkPeerService implements TransferClient {
@@ -154,7 +157,7 @@ export class NetworkPeerService implements TransferClient {
       const timeout = setTimeout(() => {
         this.onConnectionChanged('disconnected', 'Connection timed out. Please retry.');
         this.settleConnection?.(false);
-      }, ACK_TIMEOUT);
+      }, CONNECT_TIMEOUT);
       this.settleConnection = (connected) => {
         clearTimeout(timeout);
         this.settleConnection = null;
@@ -166,8 +169,8 @@ export class NetworkPeerService implements TransferClient {
           forceNew: true,
           reconnection: true,
           reconnectionDelay: 1000,
-          reconnectionDelayMax: 5000,
-          reconnectionAttempts: 5,
+          reconnectionDelayMax: 10000,
+          reconnectionAttempts: 15,
           transports: ['websocket', 'polling']
         });
         this.socket = socket;
@@ -190,8 +193,11 @@ export class NetworkPeerService implements TransferClient {
         });
 
         socket.on('connect_error', (error) => {
-          this.onConnectionChanged('disconnected', `Cannot connect to backend: ${error.message}`);
-          this.settleConnection?.(false);
+          // The backend may be a sleeping Render free-tier instance. Socket.IO will keep
+          // retrying automatically, so keep the UI in a "waking up" state rather than
+          // treating the first failure as permanent. Final failure is reported via the
+          // overall timeout or the 'reconnect_failed' event below.
+          this.onConnectionChanged('connecting', `Waking up the backend, this can take up to a minute… (${error.message})`);
         });
 
         socket.on('disconnect', () => {
@@ -201,7 +207,7 @@ export class NetworkPeerService implements TransferClient {
           this.settleConnection?.(false);
         });
         socket.io.on('reconnect_attempt', () => {
-          this.onConnectionChanged('connecting', 'Connection lost. Reconnecting...');
+          this.onConnectionChanged('connecting', 'Waking up the backend, this can take up to a minute…');
         });
         socket.io.on('reconnect_failed', () => {
           this.onConnectionChanged('disconnected', 'Unable to reconnect. Please retry.');

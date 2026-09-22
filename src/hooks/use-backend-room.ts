@@ -10,6 +10,7 @@ import { TransferManager } from '@/lib/transfer-manager';
 import { IndexedDbTransferStorage } from '@/lib/transfer-storage';
 import type { ShareMetadata, TransferState } from '@/lib/transfer-types';
 import { generateDeviceName } from '@/lib/utils';
+import { API_URL } from '@/lib/config';
 
 export type SharedFile = ShareMetadata;
 
@@ -19,8 +20,6 @@ export type ChatMessageWithMeta = ChatMessage & {
   status?: 'pending' | 'sent' | 'failed';
   message?: string;
 };
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 const DEVICE_NAME_KEY = 'dropfile_device_name';
 const DEVICE_ID_KEY = 'dropfile_device_id';
@@ -86,7 +85,7 @@ export function useRoom(roomCode: string) {
       setFiles([...merged.values()]);
     };
     const service = new NetworkPeerService(
-          BACKEND_URL,
+          API_URL,
           roomCode,
           peerNameRef.current,
           {

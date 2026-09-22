@@ -47,7 +47,7 @@ A React + Vite application for file sharing via access codes. Socket.IO manages 
    Edit `.env.local` and set your backend server URL:
 
    ```env
-   VITE_BACKEND_URL=http://localhost:3001
+   VITE_API_URL=http://localhost:3001
    ```
 
 3. Start the development server:
@@ -145,7 +145,7 @@ Works across:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VITE_BACKEND_URL` | Backend server URL | `http://localhost:3001` |
+| `VITE_API_URL` | Render backend base URL (Socket.IO, REST, chunk transfers) | `http://localhost:3001` (dev only) |
 
 ## 📁 Project Structure
 

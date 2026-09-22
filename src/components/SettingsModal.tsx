@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, Button } from 'react-bootstrap';
 import { Settings } from 'lucide-react';
+import { API_URL } from '@/lib/config';
 
 interface SettingsModalProps {
   show?: boolean;
@@ -23,7 +24,7 @@ export function SettingsModal({ show = false, onHide = () => {} }: SettingsModal
       </Modal.Header>
       <Modal.Body>
         <p className="text-muted">Using backend server for file sharing.</p>
-        <p className="small">Backend URL: {import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}</p>
+        <p className="small">Backend URL: {API_URL}</p>
       </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onClick={handleClose}>
