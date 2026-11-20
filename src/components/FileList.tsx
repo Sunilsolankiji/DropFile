@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Modal, ProgressBar, Spinner } from 'react-bootstrap';
-import { Download, File as FileIcon, FileArchive, FileCode, FileText, Image, Inbox, Music, Pause, Play, Trash2, Video, X } from 'lucide-react';
+import { Download, File as FileIcon, FileArchive, FileCode, FileText, Image, Inbox, Music, Pause, Play, Trash2, Video, X, Zap } from 'lucide-react';
 import { formatFileSize } from '@/lib/utils';
 import type { ShareMetadata, TransferState } from '@/lib/transfer-types';
 import './FileList.css';
@@ -171,7 +171,7 @@ function FileRow({ file, transfer, now, canDelete, disabled, onDownload, onPause
         <div className="file-transfer-status" aria-live="polite">
           <span>{paused ? 'Paused' : needsSource ? 'Pick the original file to keep going' : statusLabel(state, canDelete)}</span>
           {transfer?.transport === 'direct' && !terminal && (
-            <span className="transport-badge" title="Sent straight between the two devices, not through the server">Direct · same network</span>
+            <span className="transport-badge" title="Sent straight between the two devices, not through the server"><Zap size={11} aria-hidden="true" />Direct · same Wi-Fi</span>
           )}
           {canDelete && !terminal && activeReceivers > 0 && (
             <span>{activeReceivers} {activeReceivers === 1 ? 'person' : 'people'} downloading</span>

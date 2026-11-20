@@ -10,12 +10,13 @@ import { useRoom } from '@/hooks/use-backend-room';
 import { useCopyText } from '@/hooks/use-copy-text';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { takeRoomUploads } from '@/lib/pending-uploads';
+import { openSettings } from './SettingsModal';
 
 export default function RoomPage({ roomCode }: { roomCode: string }) {
   const {
     files, transfers, uploadFiles, deleteFile, downloadFile, loading, error,
     isConnected, peerCount, currentPeerId, currentPeerName, sendText, textMessages,
-    updateDeviceName, retryConnection, retryText, pauseTransfer, resumeTransfer, cancelTransfer, attachSource,
+    retryConnection, retryText, pauseTransfer, resumeTransfer, cancelTransfer, attachSource,
   } = useRoom(roomCode);
   const [showShare, setShowShare] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -139,7 +140,7 @@ export default function RoomPage({ roomCode }: { roomCode: string }) {
               <span className="visually-hidden" role="status">{copiedText === roomCode ? 'Room code copied' : ''}</span>
             </div>
             <div className="room-meta">
-              <span className="device-summary" title="This device's name"><Monitor size={14} aria-hidden="true" />{currentPeerName || 'This device'}</span>
+              <button type="button" className="device-summary device-name-button" onClick={openSettings} title="Change this device's name in Settings"><Monitor size={14} aria-hidden="true" />{currentPeerName || 'This device'}</button>
               <span className={`connection-status ${isConnected ? 'is-connected' : !loading ? 'is-offline' : ''}`} role="status"><span className="status-dot" aria-hidden="true" />{isConnected ? 'Connected' : loading ? 'Connecting...' : 'Not connected'}</span>
               {isConnected && <span className="device-summary"><Users size={14} aria-hidden="true" />{peerCount} device{peerCount === 1 ? '' : 's'}</span>}
             </div>
@@ -176,7 +177,7 @@ export default function RoomPage({ roomCode }: { roomCode: string }) {
         </div>
       </main>
       {!isDesktop && <Offcanvas show={showChat} onHide={closeChat} onExited={() => chatButton.current?.focus()} restoreFocus={false} placement="end" className="chat-mobile" aria-labelledby="chat-title"><div id="room-chat">{showChat && chat}</div></Offcanvas>}
-      <ShareRoomModal show={showShare} onHide={() => setShowShare(false)} roomCode={roomCode} deviceName={currentPeerName} peerCount={peerCount} connected={isConnected} onRename={updateDeviceName} />
+      <ShareRoomModal show={showShare} onHide={() => setShowShare(false)} roomCode={roomCode} peerCount={peerCount} connected={isConnected} />
     </div>
   );
 }

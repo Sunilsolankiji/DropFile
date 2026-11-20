@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_URL } from '@/lib/config';
-import { getOrCreateDeviceId, getOrCreateDeviceName, saveDeviceName } from '@/lib/device';
+import { getOrCreateDeviceId, getOrCreateDeviceName, useDeviceName } from '@/lib/device';
 import { NearbyService, type NearbyConnectionState, type NearbyInvite, type NearbyPeer } from '@/lib/nearby-service';
 import { P2PNetwork } from '@/lib/rtc/p2p-network';
 import { getIceServers, warmUpWebRtc } from '@/lib/rtc/ice';
@@ -24,6 +24,8 @@ export interface NearbyTransfer {
   error?: string;
   /** True when no direct connection was possible; the UI offers the server relay instead. */
   canUseRelay?: boolean;
+  /** When the first bytes moved, for speed estimates. */
+  startedAt?: number;
 }
 
 export interface PendingOffer {
@@ -47,7 +49,7 @@ export function useNearby() {
   const [transfers, setTransfers] = useState<NearbyTransfer[]>([]);
   const [offers, setOffers] = useState<PendingOffer[]>([]);
   const [invite, setInvite] = useState<NearbyInvite | null>(null);
-  const [deviceName, setDeviceName] = useState(getOrCreateDeviceName);
+  const deviceName = useDeviceName();
   const supported = P2PNetwork.isSupported();
 
   const serviceRef = useRef<NearbyService | null>(null);
@@ -58,7 +60,11 @@ export function useNearby() {
   const failedFiles = useRef(new Map<string, File>());
 
   const patch = useCallback((id: string, changes: Partial<NearbyTransfer>) => {
-    setTransfers(previous => previous.map(transfer => transfer.id === id ? { ...transfer, ...changes } : transfer));
+    setTransfers(previous => previous.map(transfer => {
+      if (transfer.id !== id) return transfer;
+      const startedAt = transfer.startedAt ?? (changes.bytes ? Date.now() : undefined);
+      return { ...transfer, ...changes, startedAt };
+    }));
   }, []);
 
   const peerName = (peerId: string) => peersRef.current.find(peer => peer.id === peerId)?.name ?? 'Nearby device';
@@ -202,14 +208,10 @@ export function useNearby() {
     }
   }, [patch, transfers]);
 
-  const rename = useCallback((name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return false;
-    saveDeviceName(trimmed);
-    setDeviceName(trimmed);
-    serviceRef.current?.rename(trimmed);
-    return true;
-  }, []);
+  // The device name is edited in Settings; keep nearby devices up to date.
+  useEffect(() => {
+    serviceRef.current?.rename(deviceName);
+  }, [deviceName]);
 
   const clearFinished = useCallback(() => {
     setTransfers(previous => previous.filter(item => !['done', 'declined', 'failed', 'cancelled'].includes(item.status)));
@@ -219,7 +221,7 @@ export function useNearby() {
 
   return {
     supported, peers, connection, connectionMessage, lanMode, transfers, offers, invite, deviceName,
-    sendFiles, cancelTransfer, respondToOffer, sendViaServer, rename, clearFinished, retry,
+    sendFiles, cancelTransfer, respondToOffer, sendViaServer, clearFinished, retry,
     dismissInvite: () => setInvite(null),
   };
 }

@@ -112,6 +112,19 @@ h1, h2, h3 { letter-spacing: -0.035em; }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-size: 1.15rem; font-weight: 700; letter-spacing: -0.045em; flex-shrink: 0; }
 .brand:hover { color: var(--ink); }
 .brand-mark { display: grid; place-items: center; height: 34px; width: 34px; border-radius: 9px; color: white; background: var(--ink); }
+.brand-group { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lan-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; background: #e9f6ef; color: var(--success); font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+.header-end { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.settings-section + .settings-section { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 20px; }
+.settings-heading { font-size: 0.72rem; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+.settings-name-row { display: flex; align-items: center; gap: 8px; }
+.settings-name-row .form-control { min-width: 0; flex: 1; }
+.settings-device-icon { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 10px; background: var(--surface-muted); color: var(--muted); }
+.settings-section .form-check-label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-size: 0.875rem; }
+.settings-help { margin: 4px 0 0; color: var(--muted); font-size: 0.8rem; line-height: 1.6; }
+.settings-info { display: flex; align-items: flex-start; gap: 10px; margin: 0; font-size: 0.875rem; }
+.settings-info svg { margin-top: 3px; color: var(--muted); flex-shrink: 0; }
+.settings-info small { display: block; color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.75rem; overflow-wrap: anywhere; }
 .header-note { font-size: 0.8rem; color: var(--muted); }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .home-main { flex: 1; padding-block: 88px 64px; }
@@ -160,6 +173,8 @@ h1, h2, h3 { letter-spacing: -0.035em; }
 .connection-status.is-offline .status-dot { background: var(--danger); }
 .room-meta { display: flex; gap: 16px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
 .device-summary { color: var(--muted); font-size: 0.775rem; display: inline-flex; align-items: center; gap: 6px; }
+.device-name-button { border: 0; background: transparent; padding: 0; text-decoration: underline dotted; text-underline-offset: 3px; }
+.device-name-button:hover { color: var(--ink); }
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
 .workspace-content { min-width: 0; }
 .workspace > #room-chat { position: sticky; top: 24px; }

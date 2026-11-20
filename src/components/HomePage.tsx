@@ -4,6 +4,7 @@ import { Button, Collapse, Form } from 'react-bootstrap';
 import { ArrowRight, ChevronDown, Clock, Wifi } from 'lucide-react';
 import AppHeader from './AppHeader';
 import { generateAccessCode } from '@/lib/utils';
+import { LAN_MODE } from '@/lib/config';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -42,7 +43,7 @@ export default function HomePage() {
             <div className="eyebrow">From your device to theirs</div>
             <h1 id="home-title">Files to share.<br /><span>Nothing in the way.</span></h1>
             <p className="home-description">A simple place to send files, links, and notes between devices. Create a room, share the code, and you're in.</p>
-            <div className="home-note"><Clock size={15} aria-hidden="true" />Temporary files. No account needed.</div>
+            <div className="home-note"><Clock size={15} aria-hidden="true" />{LAN_MODE ? 'Running on your local network. No internet needed.' : 'Temporary files. No account needed.'}</div>
           </section>
 
           <section className="start-card" aria-label="Create or join a room">

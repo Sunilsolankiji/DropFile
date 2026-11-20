@@ -11,7 +11,7 @@ import { IndexedDbTransferStorage } from '@/lib/transfer-storage';
 import type { ShareMetadata, TransferState } from '@/lib/transfer-types';
 import { saveBlobAsFile } from '@/lib/utils';
 import { API_URL } from '@/lib/config';
-import { getOrCreateDeviceId, getOrCreateDeviceName, saveDeviceName } from '@/lib/device';
+import { getDirectTransfersEnabled, getOrCreateDeviceId, getOrCreateDeviceName, useDeviceName } from '@/lib/device';
 import { P2PNetwork } from '@/lib/rtc/p2p-network';
 import { TransferCancelledError } from '@/lib/rtc/p2p-session';
 import { getIceServers, warmUpWebRtc } from '@/lib/rtc/ice';
@@ -274,7 +274,7 @@ export function useRoom(roomCode: string) {
     }
     setTransferError(null);
     const senderOnline = peers.some(peer => peer.id === file.peerId);
-    if (senderOnline && !manager.hasActiveDownload(fileId) && networkRef.current) {
+    if (senderOnline && getDirectTransfersEnabled() && !manager.hasActiveDownload(fileId) && networkRef.current) {
       if (await downloadDirect(file)) return true;
     }
     if (directRef.current.has(fileId)) updateDirect(fileId, null);
@@ -398,24 +398,14 @@ export function useRoom(roomCode: string) {
 
   const retryText = useCallback((messageId: string) => sendText('', messageId), [sendText]);
 
-  const updateDeviceName = useCallback((name: string): boolean => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError('Device name cannot be empty');
-      return false;
-    }
-
-    try {
-      saveDeviceName(trimmed);
-      peerNameRef.current = trimmed;
-      serviceRef.current?.updatePeerName(trimmed);
-      setPeers(prev => prev.map(peer => (peer.id === currentPeerId ? { ...peer, name: trimmed } : peer)));
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save the device name');
-      return false;
-    }
-  }, [currentPeerId]);
+  // The device name is edited in Settings; tell the room whenever it changes.
+  const currentPeerName = useDeviceName();
+  useEffect(() => {
+    if (peerNameRef.current === currentPeerName) return;
+    peerNameRef.current = currentPeerName;
+    serviceRef.current?.updatePeerName(currentPeerName);
+    setPeers(prev => prev.map(peer => (peer.id === deviceIdRef.current ? { ...peer, name: currentPeerName } : peer)));
+  }, [currentPeerName]);
 
   const retryConnection = useCallback(async (): Promise<boolean> => {
     const service = serviceRef.current;
@@ -433,7 +423,6 @@ export function useRoom(roomCode: string) {
     deleteFile,
     sendText,
     retryText,
-    updateDeviceName,
     downloadFile,
     pauseTransfer,
     resumeTransfer,
@@ -446,7 +435,7 @@ export function useRoom(roomCode: string) {
     isConnected,
     peerCount: peers.length,
     currentPeerId,
-    currentPeerName: peerNameRef.current,
+    currentPeerName,
     textMessages,
     connectionMode: isConnected ? 'backend' : 'offline' as const
   };

@@ -3,6 +3,7 @@ import HomePage from './components/HomePage'
 import RoomPage from './components/RoomPage'
 import NearbyPage from './components/NearbyPage'
 import { Toaster } from './components/Toaster'
+import { SettingsModal } from './components/SettingsModal'
 
 function RoomPageWrapper() {
   const { code } = useParams<{ code: string }>()
@@ -18,6 +19,7 @@ function App() {
         <Route path="/room/:code" element={<RoomPageWrapper />} />
       </Routes>
       <Toaster />
+      <SettingsModal />
     </>
   )
 }

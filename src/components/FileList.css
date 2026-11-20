@@ -65,9 +65,12 @@
 }
 
 .transport-badge {
-  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
   border-radius: 999px;
-  background: var(--surface-muted);
+  background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
 }
