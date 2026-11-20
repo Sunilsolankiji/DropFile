@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:transfers": "node --test"
+    "test:transfers": "node --test",
+    "build:lan": "tsc -b && vite build --mode lan --outDir dist-lan"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",

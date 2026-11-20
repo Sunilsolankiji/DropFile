@@ -7,9 +7,16 @@
  *
  * The localhost fallback exists only for local `vite dev`; production builds for
  * GitHub Pages always inject `VITE_API_URL`, so localhost never ships to production.
+ *
+ * The offline LAN build (`npm run build:lan`, `VITE_LAN_MODE=true`) is served by the DropFile
+ * server itself, so it talks to whichever LAN address the page was opened from.
  */
 
-const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+export const LAN_MODE = import.meta.env.VITE_LAN_MODE === 'true';
+
+const rawApiUrl = LAN_MODE && typeof window !== 'undefined'
+  ? window.location.origin
+  : import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 // Normalize by trimming a single trailing slash so joins produce clean URLs.
 export const API_URL = rawApiUrl.replace(/\/+$/, '');

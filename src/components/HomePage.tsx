@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Collapse, Form } from 'react-bootstrap';
-import { ArrowRight, ChevronDown, Clock } from 'lucide-react';
+import { ArrowRight, ChevronDown, Clock, Wifi } from 'lucide-react';
 import AppHeader from './AppHeader';
 import { generateAccessCode } from '@/lib/utils';
 
@@ -51,6 +51,10 @@ export default function HomePage() {
             <Button className="create-button" onClick={() => openRoom(generateAccessCode())}>
               Create a room <ArrowRight size={17} aria-hidden="true" />
             </Button>
+            <Button variant="outline-secondary" className="create-button nearby-button" onClick={() => navigate('/nearby')}>
+              <Wifi size={17} aria-hidden="true" /> Share with nearby devices
+            </Button>
+            <p className="nearby-hint">Same Wi-Fi? Send files straight to another device, no code needed.</p>
             <Button
               variant="link"
               className="custom-toggle"

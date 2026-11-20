@@ -9,8 +9,12 @@ import { NetworkPeerService, NetworkPeer, SharedTextMessage } from '@/lib/networ
 import { TransferManager } from '@/lib/transfer-manager';
 import { IndexedDbTransferStorage } from '@/lib/transfer-storage';
 import type { ShareMetadata, TransferState } from '@/lib/transfer-types';
-import { generateDeviceName } from '@/lib/utils';
+import { saveBlobAsFile } from '@/lib/utils';
 import { API_URL } from '@/lib/config';
+import { getOrCreateDeviceId, getOrCreateDeviceName, saveDeviceName } from '@/lib/device';
+import { P2PNetwork } from '@/lib/rtc/p2p-network';
+import { TransferCancelledError } from '@/lib/rtc/p2p-session';
+import { getIceServers, warmUpWebRtc } from '@/lib/rtc/ice';
 
 export type SharedFile = ShareMetadata;
 
@@ -21,32 +25,29 @@ export type ChatMessageWithMeta = ChatMessage & {
   message?: string;
 };
 
-const DEVICE_NAME_KEY = 'dropfile_device_name';
-const DEVICE_ID_KEY = 'dropfile_device_id';
+const DIRECT_PREFIX = 'direct:';
+const DIRECT_PROGRESS_UNITS = 1000;
+// Devices on the same Wi-Fi usually connect in well under a second; give up quickly otherwise.
+const DIRECT_CONNECT_TIMEOUT_MS = 6000;
 
-// Get or create a persistent device name
-function getOrCreateDeviceName(): string {
-  let deviceName = localStorage.getItem(DEVICE_NAME_KEY);
-  if (!deviceName) {
-    deviceName = generateDeviceName();
-    localStorage.setItem(DEVICE_NAME_KEY, deviceName);
-  }
-  return deviceName;
+interface DirectDownload {
+  state: TransferState;
+  controller: AbortController;
 }
 
-// Get or create a persistent device ID
-function getOrCreateDeviceId(): string {
-  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
-  if (!deviceId) {
-    deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem(DEVICE_ID_KEY, deviceId);
-  }
-  return deviceId;
+function directState(file: ShareMetadata, overrides: Partial<TransferState> = {}): TransferState {
+  return {
+    transferId: `${DIRECT_PREFIX}${file.id}`, fileId: file.id, role: 'receiver', state: 'transferring',
+    paused: false, needsSource: false, canResume: false, uploadedChunkCount: 0, acknowledgedChunkCount: 0,
+    receivedChunkCount: 0, totalChunks: DIRECT_PROGRESS_UNITS, chunkSize: file.chunkSize, inFlightChunks: [],
+    failedChunks: [], transport: 'direct', canPause: false, ...overrides,
+  };
 }
 
 export function useRoom(roomCode: string) {
   const [files, setFiles] = useState<SharedFile[]>([]);
-  const [transfers, setTransfers] = useState<TransferState[]>([]);
+  const [relayTransfers, setTransfers] = useState<TransferState[]>([]);
+  const [directTransfers, setDirectTransfers] = useState<TransferState[]>([]);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +58,8 @@ export function useRoom(roomCode: string) {
 
   const serviceRef = useRef<NetworkPeerService | null>(null);
   const managerRef = useRef<TransferManager | null>(null);
+  const networkRef = useRef<P2PNetwork | null>(null);
+  const directRef = useRef(new Map<string, DirectDownload>());
   const transfersRef = useRef<TransferState[]>([]);
   const peerNameRef = useRef<string>(getOrCreateDeviceName());
   const deviceIdRef = useRef<string>(getOrCreateDeviceId());
@@ -69,6 +72,8 @@ export function useRoom(roomCode: string) {
     confirmedTextIdsRef.current.clear();
     setFiles([]);
     setTransfers([]);
+    setDirectTransfers([]);
+    directRef.current = new Map();
     setTransferError(null);
     setTextMessages([]);
     setPeers([]);
@@ -78,6 +83,7 @@ export function useRoom(roomCode: string) {
     let serverFiles: ShareMetadata[] = [];
     let localShares: ShareMetadata[] = [];
     let manager: TransferManager | null = null;
+    let network: P2PNetwork | null = null;
     const updateFiles = () => {
       if (!mounted) return;
       const merged = new Map(localShares.map(file => [file.id, file]));
@@ -128,17 +134,19 @@ export function useRoom(roomCode: string) {
               console.log(`Peer joined: ${peer.name}`);
             },
             onPeerLeft: (peerId) => {
-              console.log(`Peer left: ${peerId}`);
+              network?.disconnect(peerId, 'The other device left the room');
             },
             onFileAdded: (file) => {
               console.log(`File added: ${file.name}`);
             },
             onFileRemoved: (fileId) => {
               manager?.removeFile(fileId);
+              directRef.current.get(fileId)?.controller.abort();
             },
             onTransferUpdated: (update) => manager?.handleUpdate(update),
             onTransferCompleted: (update) => manager?.handleUpdate(update, true),
             onTransferError: message => { if (mounted) setTransferError(message); },
+            onSignal: (fromPeerId, data) => { void network?.handleSignal(fromPeerId, data); },
             onTextAdded: (text) => {
               if (!mounted) return;
               if (text.peerId === deviceIdRef.current) confirmedTextIdsRef.current.add(text.id);
@@ -164,6 +172,17 @@ export function useRoom(roomCode: string) {
     });
     managerRef.current = manager;
     serviceRef.current = service;
+    // Direct device-to-device transfers; the server only relays the WebRTC handshake.
+    network = P2PNetwork.isSupported()
+      ? new P2PNetwork(deviceIdRef.current, { send: (target, data) => service.sendSignal(target, data) }, {
+        resolveRequest: fileId => manager?.getSource(fileId),
+      })
+      : null;
+    networkRef.current = network;
+    if (network) {
+      void getIceServers();
+      warmUpWebRtc();
+    }
     setCurrentPeerId(service.getPeerId());
     void manager.restore()
       .catch(err => { if (mounted) setTransferError(`Could not restore local transfers: ${err instanceof Error ? err.message : String(err)}`); })
@@ -171,6 +190,9 @@ export function useRoom(roomCode: string) {
 
     return () => {
       mounted = false;
+      for (const direct of directRef.current.values()) direct.controller.abort();
+      network?.dispose();
+      if (networkRef.current === network) networkRef.current = null;
       manager?.dispose();
       if (managerRef.current === manager) managerRef.current = null;
       if (serviceRef.current === service) serviceRef.current = null;
@@ -180,17 +202,68 @@ export function useRoom(roomCode: string) {
 
   // Upload files
   const uploadFiles = useCallback(async (filesToUpload: File[]): Promise<void> => {
-    const manager = managerRef.current;
-    if (!manager || !serviceRef.current?.isConnected()) {
-      setError('Not connected to the room');
+    const service = serviceRef.current;
+    if (!service) return;
+    // Mobile browsers disconnect while the file picker is open; wait for the room to come back.
+    if (!service.isConnected() && !(await service.waitForConnection(60000))) {
+      if (serviceRef.current === service) setError('Could not reconnect to the room. Check your connection and choose the files again.');
       return;
     }
+    const manager = managerRef.current;
+    if (!manager || serviceRef.current !== service) return;
     setTransferError(null);
     for (const file of filesToUpload) {
       if (managerRef.current !== manager) return;
       await manager.upload(file);
     }
   }, []);
+
+  const updateDirect = useCallback((fileId: string, state: TransferState | null) => {
+    if (state) {
+      const current = directRef.current.get(fileId);
+      if (current) current.state = state;
+    } else {
+      directRef.current.delete(fileId);
+    }
+    setDirectTransfers([...directRef.current.values()].map(direct => direct.state));
+  }, []);
+
+  /**
+   * Try to download straight from the sender over WebRTC. Returns false (after cleaning up) when a
+   * direct connection is impossible, so the caller can fall back to the server relay.
+   */
+  const downloadDirect = useCallback(async (file: ShareMetadata): Promise<boolean> => {
+    const network = networkRef.current;
+    if (!network || directRef.current.has(file.id) && directRef.current.get(file.id)!.state.state === 'transferring') return !!network;
+    const controller = new AbortController();
+    directRef.current.set(file.id, { controller, state: directState(file, { state: 'pending' }) });
+    updateDirect(file.id, directState(file, { state: 'pending' }));
+    let receivedAny = false;
+    try {
+      const session = await network.session(file.peerId, DIRECT_CONNECT_TIMEOUT_MS);
+      controller.signal.throwIfAborted();
+      updateDirect(file.id, directState(file));
+      const blob = await session.requestFile(file.id, (bytes, size) => {
+        receivedAny = receivedAny || bytes > 0;
+        if (directRef.current.get(file.id)?.controller !== controller) return;
+        updateDirect(file.id, directState(file, {
+          receivedChunkCount: size > 0 ? Math.floor(bytes / size * DIRECT_PROGRESS_UNITS) : DIRECT_PROGRESS_UNITS,
+        }));
+      }, controller.signal);
+      if (blob.size !== file.size) throw new Error('The direct transfer was incomplete.');
+      saveBlobAsFile(file.name, blob);
+      updateDirect(file.id, directState(file, { state: 'completed', receivedChunkCount: DIRECT_PROGRESS_UNITS }));
+      return true;
+    } catch (error) {
+      if (controller.signal.aborted || error instanceof TransferCancelledError) {
+        updateDirect(file.id, directState(file, { state: 'cancelled', cancelReason: error instanceof Error ? error.message : 'Cancelled' }));
+        return true;
+      }
+      console.info(`Direct transfer unavailable${receivedAny ? ' (interrupted)' : ''}, using the server relay:`, error);
+      updateDirect(file.id, null);
+      return false;
+    }
+  }, [updateDirect]);
 
   const downloadFile = useCallback(async (fileId: string): Promise<boolean> => {
     const manager = managerRef.current;
@@ -200,21 +273,32 @@ export function useRoom(roomCode: string) {
       return false;
     }
     setTransferError(null);
+    const senderOnline = peers.some(peer => peer.id === file.peerId);
+    if (senderOnline && !manager.hasActiveDownload(fileId) && networkRef.current) {
+      if (await downloadDirect(file)) return true;
+    }
+    if (directRef.current.has(fileId)) updateDirect(fileId, null);
     return manager.startDownload(file);
-  }, [files]);
+  }, [files, peers, downloadDirect, updateDirect]);
 
   const pauseTransfer = useCallback((transferId: string) => {
+    if (transferId.startsWith(DIRECT_PREFIX)) return;
     if (!managerRef.current) { setTransferError('The transfer manager is unavailable. Rejoin the room.'); return; }
     managerRef.current.pause(transferId);
   }, []);
 
   const resumeTransfer = useCallback(async (transferId: string) => {
+    if (transferId.startsWith(DIRECT_PREFIX)) return false;
     if (!managerRef.current) { setTransferError('The transfer manager is unavailable. Rejoin the room.'); return false; }
     setTransferError(null);
     return managerRef.current.resume(transferId);
   }, []);
 
   const cancelTransfer = useCallback(async (transferId: string) => {
+    if (transferId.startsWith(DIRECT_PREFIX)) {
+      directRef.current.get(transferId.slice(DIRECT_PREFIX.length))?.controller.abort();
+      return true;
+    }
     if (!managerRef.current) { setTransferError('The transfer manager is unavailable. Rejoin the room.'); return false; }
     setTransferError(null);
     return managerRef.current.cancel(transferId);
@@ -322,7 +406,7 @@ export function useRoom(roomCode: string) {
     }
 
     try {
-      localStorage.setItem(DEVICE_NAME_KEY, trimmed);
+      saveDeviceName(trimmed);
       peerNameRef.current = trimmed;
       serviceRef.current?.updatePeerName(trimmed);
       setPeers(prev => prev.map(peer => (peer.id === currentPeerId ? { ...peer, name: trimmed } : peer)));
@@ -338,6 +422,9 @@ export function useRoom(roomCode: string) {
     if (!service) return false;
     return service.connect();
   }, []);
+
+  // Direct downloads come first so the file row reflects the transfer actually in progress.
+  const transfers = [...directTransfers, ...relayTransfers];
 
   return {
     files,

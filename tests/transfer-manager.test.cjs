@@ -1029,3 +1029,44 @@ for (const corruption of ['chunk hash', 'whole-file hash', 'wrong chunk size', '
     if (corruption !== 'whole-file hash') assert.equal(relay.acks.length, 0);
   });
 }
+
+test('sender uploads evicted chunks again when a later receiver needs them', async t => {
+  const relay = new Relay(4);
+  const h = harness(t, relay);
+  const file = source(11);
+  h.manager.setConnected(true);
+  assert.equal(await h.manager.upload(file), true);
+  await until(() => uploadFinished(h.states.get('transfer-1')));
+  assert.equal(relay.requests.length, 3);
+  const transfer = relay.transfers.get('transfer-1');
+  // The relay evicted every chunk for the first receiver; a new receiver needs them again.
+  transfer.uploaded.clear();
+  transfer.chunks.clear();
+  h.manager.handleUpdate({
+    transferId: 'transfer-1', fileId: transfer.file.id,
+    status: { state: 'transferring', uploadedChunks: 0, acknowledgedChunks: 0, senderConnected: true, activeReceivers: 1 },
+  });
+  await until(() => relay.requests.length === 6 && uploadFinished(h.states.get('transfer-1')));
+  assert.deepEqual(sorted(relay.requests.slice(3).map(request => request.index)), [0, 1, 2]);
+  assert.deepEqual(h.errors, []);
+});
+
+test('a completed download can be started again', async t => {
+  const relay = new Relay(4);
+  const file = source(9);
+  const transfer = await relay.seed(file);
+  const h = harness(t, relay, 'receiver');
+  h.manager.setConnected(true);
+  assert.equal(await h.manager.startDownload(transfer.file), true);
+  await until(() => h.downloads.length === 1);
+  transfer.acknowledged.clear();
+  transfer.state = 'ready';
+  for (let index = 0; index < transfer.file.totalChunks; index++) {
+    transfer.uploaded.add(index);
+    transfer.chunks.set(index, file.slice(index * 4, index * 4 + 4));
+  }
+  assert.equal(await h.manager.startDownload(transfer.file), true);
+  await until(() => h.downloads.length === 2);
+  assert.deepEqual(await bytesOf(h.downloads[1].blob), await bytesOf(file));
+  assert.deepEqual(h.errors, []);
+});

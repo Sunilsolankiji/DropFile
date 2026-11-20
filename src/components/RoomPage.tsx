@@ -9,6 +9,7 @@ import ShareRoomModal from './ShareRoomModal';
 import { useRoom } from '@/hooks/use-backend-room';
 import { useCopyText } from '@/hooks/use-copy-text';
 import { useMediaQuery } from '@/hooks/use-media-query';
+import { takeRoomUploads } from '@/lib/pending-uploads';
 
 export default function RoomPage({ roomCode }: { roomCode: string }) {
   const {
@@ -28,6 +29,13 @@ export default function RoomPage({ roomCode }: { roomCode: string }) {
   const hasLoaded = useRef(false);
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const { copy, copiedText } = useCopyText();
+
+  // Files handed over from the Nearby page when a direct connection was impossible.
+  useEffect(() => {
+    if (!isConnected) return;
+    const queued = takeRoomUploads(roomCode);
+    if (queued.length) void uploadFiles(queued);
+  }, [isConnected, roomCode, uploadFiles]);
 
   useEffect(() => {
     if (showChat) setUnread(0);
@@ -162,7 +170,7 @@ export default function RoomPage({ roomCode }: { roomCode: string }) {
                 <FileList files={files} transfers={transfers} currentPeerId={currentPeerId} disabled={!isConnected} onDelete={deleteFile} onDownload={downloadFile} onPause={pauseTransfer} onResume={resumeTransfer} onCancel={cancelTransfer} onAttachSource={attachSource} />
               )}
             </section>
-            <p className="room-footnote"><Clock size={14} aria-hidden="true" />Keep both devices in the room until the transfer finishes. Files expire automatically.</p>
+            <p className="room-footnote"><Clock size={14} aria-hidden="true" />Keep both devices in the room until the transfer finishes. On the same Wi-Fi, downloads go directly between devices when possible.</p>
           </div>
           {showChat && isDesktop && <div id="room-chat">{chat}</div>}
         </div>

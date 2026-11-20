@@ -15,6 +15,7 @@ interface Entry {
   inFlight: Set<number>;
   failed: Set<number>;
   writes: Set<Promise<void>>;
+  wakers: Set<() => void>;
   remoteUploaded: number;
   remoteAcknowledged: number;
   purged: boolean;
@@ -31,6 +32,13 @@ interface ManagerOptions {
 
 const terminal = new Set<TransferPhase>(['completed', 'cancelled', 'expired', 'removed', 'sender-timeout']);
 const stopped = new Set<TransferPhase>([...terminal, 'failed', 'offline', 'sender-offline']);
+// Waiting for the relay (409 buffer full / 404 not uploaded yet) is cut short by transfer updates.
+const MAX_WAIT_MS = 2000;
+const MIN_REQUEST_TIMEOUT_MS = 30000;
+// Slow mobile uplinks share bandwidth across parallel requests; give each chunk ~16 KB/s.
+const MIN_THROUGHPUT_BYTES_PER_SECOND = 16 * 1024;
+// WebCrypto is much faster for large chunks but needs a secure context; small chunks stay synchronous.
+const WEBCRYPTO_MIN_BYTES = 64 * 1024;
 
 class TransferFailure extends Error {
   constructor(message: string, readonly phase: TransferPhase = 'failed', readonly discard = false) {
@@ -76,7 +84,16 @@ function validateLayout(file: ShareMetadata) {
 }
 
 async function chunkHash(blob: Blob): Promise<string> {
-  return bytesToHex(sha256(new Uint8Array(await blob.arrayBuffer())));
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle && bytes.byteLength >= WEBCRYPTO_MIN_BYTES) {
+    try {
+      return bytesToHex(new Uint8Array(await subtle.digest('SHA-256', bytes)));
+    } catch {
+      // Fall back to the portable implementation (e.g. insecure http:// LAN origins).
+    }
+  }
+  return bytesToHex(sha256(bytes));
 }
 
 function verifyHash(actual: string, expected: string) {
@@ -139,7 +156,7 @@ export class TransferManager {
     const existing = this.entries.get(record.transferId);
     if (existing) return existing;
     const entry: Entry = {
-      record, received: new Set(), inFlight: new Set(), failed: new Set(), writes: new Set(),
+      record, received: new Set(), inFlight: new Set(), failed: new Set(), writes: new Set(), wakers: new Set(),
       remoteUploaded: record.uploadedChunks.length, remoteAcknowledged: record.acknowledgedChunks.length, purged: false,
       restartRequested: false, snapshotReceived: false,
     };
@@ -171,6 +188,8 @@ export class TransferManager {
       completedReceiverPeerIds: entry.record.completedReceiverPeerIds,
       cancelReason: entry.record.cancelReason,
       error: entry.record.error,
+      transport: 'relay',
+      canPause: true,
     })), [...this.entries.values()].filter(entry => entry.record.state !== 'removed').map(entry => entry.record.file));
   }
 
@@ -209,6 +228,8 @@ export class TransferManager {
   }
 
   private stop(entry: Entry, state: TransferPhase, reason?: string) {
+    // A finished transfer keeps its first terminal outcome (e.g. expiry is not relabelled as removal).
+    if (terminal.has(entry.record.state) && entry.record.state !== state) return;
     entry.record.state = state;
     entry.record.cancelReason = reason;
     entry.controller?.abort();
@@ -217,6 +238,33 @@ export class TransferManager {
     if (terminal.has(state)) {
       void this.purge(entry).catch(error => this.report(error));
     }
+  }
+
+  private wake(entry: Entry) {
+    for (const wake of entry.wakers) wake();
+  }
+
+  /**
+   * Sleep up to `ms`, returning early when a transfer update for this entry arrives.
+   */
+  private waitForChange(entry: Entry, ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      signal.throwIfAborted();
+      const finish = () => {
+        clearTimeout(timer);
+        entry.wakers.delete(finish);
+        signal.removeEventListener('abort', abort);
+        resolve();
+      };
+      const abort = () => {
+        clearTimeout(timer);
+        entry.wakers.delete(finish);
+        reject(signal.reason);
+      };
+      const timer = setTimeout(finish, ms);
+      entry.wakers.add(finish);
+      signal.addEventListener('abort', abort, { once: true });
+    });
   }
 
   syncFiles(files: ShareMetadata[]) {
@@ -271,26 +319,35 @@ export class TransferManager {
     // shared bookkeeping (receiver counts) and never touch this peer's own transfer state.
     const scopedPeerId = typeof update.peerId === 'string' && update.peerId.trim() ? update.peerId : undefined;
     if (scopedPeerId !== undefined && scopedPeerId !== this.client.getPeerId()) {
+      this.wake(entry);
       this.emit();
       return;
     }
     try {
       const next = completed ? 'completed' : phase(update.status.state);
+      const isReceiver = entry.record.role === 'receiver';
       if (next === 'completed') {
         if (entry.record.role === 'sender') this.stop(entry, 'completed');
         // A server completion is not proof that this browser has assembled its durable chunks.
         else if (!entry.record.paused) this.launch(entry);
       } else if (terminal.has(next)) {
         this.stop(entry, next, update.reason || `Transfer ${next}.`);
-      } else if (next === 'sender-offline' || update.status.senderConnected === false) {
+      } else if (isReceiver && (next === 'sender-offline' || update.status.senderConnected === false)) {
         entry.record.state = 'sender-offline';
-        entry.record.error = update.reason || 'The sender is offline. Resume when the sender reconnects.';
+        entry.record.error = update.reason === 'sender-offline' || !update.reason
+          ? 'The sender is offline. The download continues automatically when the sender reconnects.'
+          : update.reason;
         entry.controller?.abort();
       } else if (entry.record.state === 'sender-offline' && update.status.senderConnected === true) {
         entry.record.state = next;
         entry.record.error = undefined;
+        if (!entry.record.paused) this.launch(entry);
+      } else if (entry.record.role === 'sender' && !entry.task && !entry.record.paused && entry.source
+        && !stopped.has(entry.record.state) && update.status.uploadedChunks < entry.record.file.totalChunks) {
+        // A receiver that joined later needs chunks the relay already evicted: upload them again.
         this.launch(entry);
       }
+      this.wake(entry);
       this.emit();
     } catch (error) {
       this.report(error, entry);
@@ -339,6 +396,11 @@ export class TransferManager {
       validateLayout(file);
       if (file.expiresAt <= Date.now()) throw new TransferFailure('This file has expired.', 'expired');
       entry = [...this.entries.values()].find(item => item.record.fileId === file.id && item.record.role === 'receiver');
+      // A finished (or cancelled) download can be started again from scratch.
+      if (entry && terminal.has(entry.record.state) && entry.purged) {
+        this.entries.delete(entry.record.transferId);
+        entry = undefined;
+      }
       if (entry) return this.resume(entry.record.transferId);
       const started = await this.client.startTransfer(file.id);
       if (this.disposed) return false;
@@ -530,7 +592,6 @@ export class TransferManager {
         this.emit();
         return;
       }
-      await this.prepareSource(entry, signal);
       await this.uploadChunks(entry, signal);
     } else {
       entry.received = new Set(indexes(await this.storage.chunkIndexes(entry.record.transferId), entry.record.file.totalChunks));
@@ -539,23 +600,21 @@ export class TransferManager {
     }
   }
 
-  private async prepareSource(entry: Entry, signal: AbortSignal) {
-    const source = entry.source;
-    if (!source) throw new TransferFailure('Choose the original file to continue.');
-    const hashes: string[] = [];
-    for (let index = 0; index < entry.record.file.totalChunks; index++) {
-      this.guard(entry, signal);
-      const start = index * entry.record.file.chunkSize;
-      const hash = await chunkHash(source.slice(start, start + entry.record.file.chunkSize));
-      this.guard(entry, signal);
-      if (entry.record.sourceHashes && entry.record.sourceHashes[index] !== hash) {
-        entry.source = undefined;
-        throw new TransferFailure('This file differs from the original. Choose the unchanged original file.');
-      }
-      hashes.push(hash);
+  /**
+   * Fingerprint one source chunk just before it is uploaded. Hashing lazily lets the first chunk
+   * leave immediately instead of reading the whole file first, and still detects a changed source
+   * file after a refresh because previously uploaded chunks keep their recorded fingerprints.
+   */
+  private async sourceChunkHash(entry: Entry, index: number, body: Blob, signal: AbortSignal): Promise<string> {
+    const hash = await chunkHash(body);
+    this.guard(entry, signal);
+    const hashes = entry.record.sourceHashes ?? (entry.record.sourceHashes = []);
+    if (hashes[index] !== undefined && hashes[index] !== hash) {
+      entry.source = undefined;
+      throw new TransferFailure('This file differs from the original. Choose the unchanged original file.');
     }
-    entry.record.sourceHashes = hashes;
-    await this.persist(entry);
+    hashes[index] = hash;
+    return hash;
   }
 
   private async uploadChunks(entry: Entry, signal: AbortSignal) {
@@ -568,14 +627,18 @@ export class TransferManager {
       const missing = Array.from({ length: file.totalChunks }, (_, index) => index).filter(index => !uploaded.has(index));
       if (!missing.length) {
         entry.record.state = 'ready';
+        entry.record.error = undefined;
         await this.persist(entry);
         this.emit();
         return;
       }
       entry.record.state = 'transferring';
-      await this.batch(entry, missing.slice(0, TRANSFER_CONCURRENCY), signal, async index => {
+      await this.pool(entry, missing, signal, async index => {
+        const source = entry.source;
+        if (!source) throw new TransferFailure('Choose the original file to continue.');
         const start = index * file.chunkSize;
-        const body = entry.source!.slice(start, Math.min(start + file.chunkSize, file.size));
+        const body = source.slice(start, Math.min(start + file.chunkSize, file.size));
+        await this.sourceChunkHash(entry, index, body, signal);
         await this.chunkRequest(entry, index, signal, body);
         this.guard(entry, signal);
         entry.record.uploadedChunks = [...new Set([...entry.record.uploadedChunks, index])];
@@ -596,6 +659,7 @@ export class TransferManager {
         if (!acknowledged.has(index)) {
           this.guard(entry, signal);
           await this.client.acknowledgeChunk(entry.record.transferId, index);
+          acknowledged.add(index);
         }
       }
       if (entry.received.size === file.totalChunks && (acknowledged.size === file.totalChunks || snapshot.state === 'completed')) {
@@ -604,11 +668,11 @@ export class TransferManager {
       }
       const available = entry.record.uploadedChunks.filter(index => !entry.received.has(index) && !acknowledged.has(index));
       if (!available.length) {
-        await delay(1000, signal);
+        await this.waitForChange(entry, 1000, signal);
         continue;
       }
       entry.record.state = 'transferring';
-      await this.batch(entry, available.slice(0, TRANSFER_CONCURRENCY), signal, async index => {
+      await this.pool(entry, available, signal, async index => {
         const response = await this.chunkRequest(entry, index, signal);
         const blob = response.data;
         this.guard(entry, signal);
@@ -648,29 +712,41 @@ export class TransferManager {
     this.emit();
   }
 
-  private async batch(entry: Entry, chunkIndexes: number[], signal: AbortSignal, work: (index: number) => Promise<void>) {
+  /**
+   * Run `work` over every index with a sliding window of TRANSFER_CONCURRENCY workers, so a slow
+   * chunk never stalls the others. The first failure aborts the remaining work.
+   */
+  private async pool(entry: Entry, chunkIndexes: number[], signal: AbortSignal, work: (index: number) => Promise<void>) {
     let firstFailure: TransferFailure | undefined;
-    const results = await Promise.allSettled(chunkIndexes.map(async index => {
-      entry.inFlight.add(index);
-      this.emit();
-      try {
-        this.guard(entry, signal);
-        await work(index);
-      } catch (error) {
-        if (!signal.aborted) {
-          entry.failed.add(index);
-          firstFailure = error instanceof TransferFailure ? error : new TransferFailure(error instanceof Error ? error.message : 'Chunk processing failed.');
-          entry.controller?.abort(firstFailure);
-        }
-        throw error;
-      } finally {
-        entry.inFlight.delete(index);
+    let firstError: unknown;
+    let next = 0;
+    const worker = async () => {
+      while (next < chunkIndexes.length && !signal.aborted && !firstFailure) {
+        const index = chunkIndexes[next++];
+        entry.inFlight.add(index);
         this.emit();
+        try {
+          this.guard(entry, signal);
+          await work(index);
+          entry.failed.delete(index);
+        } catch (error) {
+          if (!signal.aborted) {
+            entry.failed.add(index);
+            firstFailure = error instanceof TransferFailure ? error : new TransferFailure(error instanceof Error ? error.message : 'Chunk processing failed.');
+            entry.controller?.abort(firstFailure);
+          }
+          firstError ??= error;
+          return;
+        } finally {
+          entry.inFlight.delete(index);
+          this.emit();
+        }
       }
-    }));
+    };
+    await Promise.all(Array.from({ length: Math.min(TRANSFER_CONCURRENCY, chunkIndexes.length) }, worker));
     if (firstFailure) throw firstFailure;
-    const failure = results.find(result => result.status === 'rejected');
-    if (failure?.status === 'rejected') throw failure.reason;
+    if (firstError !== undefined) throw firstError;
+    signal.throwIfAborted();
   }
 
   private async acquire(signal: AbortSignal) {
@@ -691,17 +767,20 @@ export class TransferManager {
   private async chunkRequest(entry: Entry, index: number, signal: AbortSignal, body?: Blob): Promise<{ data: Blob | null; hash: string | null }> {
     let failures = 0;
     let waits = 0;
+    let reregistered = false;
     const template = body ? entry.record.uploadUrlTemplate : entry.record.downloadUrlTemplate;
     const url = this.client.getChunkUrl(template, entry.record.transferId, index);
+    const timeoutMs = Math.max(MIN_REQUEST_TIMEOUT_MS, Math.ceil(entry.record.file.chunkSize / MIN_THROUGHPUT_BYTES_PER_SECOND) * 1000);
     while (true) {
       this.guard(entry, signal);
       await this.acquire(signal);
       const request = new AbortController();
       const abort = () => request.abort();
       signal.addEventListener('abort', abort, { once: true });
-      const timeout = setTimeout(() => request.abort(), 30000);
+      const timeout = setTimeout(() => request.abort(), timeoutMs);
       let response: Response | undefined;
       let networkError: unknown;
+      let retryRegistration = false;
       try {
         const headers: Record<string, string> = { 'x-peer-id': this.client.getPeerId() };
         if (body) headers['Content-Type'] = 'application/octet-stream';
@@ -711,8 +790,10 @@ export class TransferManager {
           const data = body ? null : await response.blob();
           return { data, hash: response.headers.get('X-Chunk-Hash') };
         }
+        // The relay forgets a receiver whose connection dropped for too long; register again once.
+        retryRegistration = !body && response.status === 403 && !reregistered;
         const waitForPeer = (body && response.status === 409) || (!body && response.status === 404);
-        if (!waitForPeer && ![408, 425, 429].includes(response.status) && response.status < 500) {
+        if (!retryRegistration && !waitForPeer && ![408, 425, 429].includes(response.status) && response.status < 500) {
           throw new TransferFailure(
             `Chunk ${index + 1} was rejected (HTTP ${response.status}). ${response.status === 410 ? 'This transfer is no longer available.' : 'Check room access or ask the sender to share the file again.'}`,
             response.status === 410 ? 'expired' : 'failed', response.status === 410,
@@ -729,13 +810,23 @@ export class TransferManager {
         for (const wake of this.slotWaiters) wake();
       }
       this.guard(entry, signal);
+      if (retryRegistration) {
+        reregistered = true;
+        await this.client.startTransfer(entry.record.fileId);
+        continue;
+      }
       const waiting = !networkError && response && ((body && response.status === 409) || (!body && response.status === 404));
       if (!waiting && ++failures > 5) {
         throw new TransferFailure(`Chunk ${index + 1} could not be ${body ? 'uploaded' : 'downloaded'}. Resume to try again. ${networkError instanceof Error ? networkError.message : ''}`);
       }
       const retryAfter = response?.headers.get('Retry-After');
       const serverDelay = retryAfter && /^\d+$/.test(retryAfter) ? Math.min(Number(retryAfter) * 1000, 30000) : 0;
-      await delay(Math.max(serverDelay, Math.min(500 * 2 ** Math.min(waiting ? waits++ : failures - 1, 4), 8000)), signal);
+      if (waiting) {
+        // Relay backpressure clears as soon as a receiver acknowledges; transfer updates wake us early.
+        await this.waitForChange(entry, Math.max(serverDelay, Math.min(250 * 2 ** Math.min(waits++, 3), MAX_WAIT_MS)), signal);
+      } else {
+        await delay(Math.max(serverDelay, Math.min(500 * 2 ** (failures - 1), 8000)), signal);
+      }
     }
   }
 
@@ -747,5 +838,19 @@ export class TransferManager {
       entry.controller?.abort();
       entry.source = undefined;
     }
+  }
+
+  /** The original local File of a share this device sends, for serving direct (WebRTC) downloads. */
+  getSource(fileId: string): File | undefined {
+    for (const entry of this.entries.values()) {
+      if (entry.record.fileId === fileId && entry.record.role === 'sender' && !terminal.has(entry.record.state)) return entry.source;
+    }
+    return undefined;
+  }
+
+  /** Whether a relay download of this file is in progress or resumable on this device. */
+  hasActiveDownload(fileId: string): boolean {
+    return [...this.entries.values()].some(entry => entry.record.fileId === fileId && entry.record.role === 'receiver'
+      && !terminal.has(entry.record.state));
   }
 }

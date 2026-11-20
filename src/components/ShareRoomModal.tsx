@@ -3,6 +3,7 @@ import { Button, Form, Modal } from 'react-bootstrap';
 import { Check, Clock, Copy, Link, Monitor, Users } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useCopyText } from '@/hooks/use-copy-text';
+import { useShareableUrl } from '@/lib/shareable-url';
 
 interface ShareRoomModalProps {
   show: boolean;
@@ -23,7 +24,7 @@ export default function ShareRoomModal({ show, onHide, roomCode, deviceName, pee
   const renameButton = useRef<HTMLButtonElement>(null);
   const wasEditing = useRef(false);
   const { copy, copiedText } = useCopyText();
-  const roomUrl = window.location.href;
+  const roomUrl = useShareableUrl();
 
   useEffect(() => {
     if (show && wasEditing.current && !editing) renameButton.current?.focus();

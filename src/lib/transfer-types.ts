@@ -155,6 +155,10 @@ export interface TransferState {
   completedReceiverPeerIds?: string[];
   cancelReason?: string;
   error?: string;
+  /** How the bytes travel: directly between devices (WebRTC) or through the server relay. */
+  transport?: 'direct' | 'relay';
+  /** False when the transfer cannot be paused (direct transfers can only be cancelled). */
+  canPause?: boolean;
 }
 
 export interface TransferStorage {

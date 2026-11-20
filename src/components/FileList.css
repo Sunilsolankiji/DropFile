@@ -64,6 +64,14 @@
   overflow-wrap: anywhere;
 }
 
+.transport-badge {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 @media (max-width: 575px) {
   .file-transfer-row {
     flex-wrap: wrap;

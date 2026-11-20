@@ -27,9 +27,10 @@ export default function FileUpload({ onUpload, disabled = false }: FileUploadPro
       toast({ title: 'Adding your files', description: 'Wait for the selected files to appear before adding more.', variant: 'info' });
       return;
     }
+    // Files chosen while the room is reconnecting (mobile browsers disconnect while the file picker
+    // is open) are kept and shared as soon as the connection returns.
     if (disabled) {
-      toast({ title: 'Not connected yet', description: 'Wait for the room to connect before adding files.', variant: 'warning' });
-      return;
+      toast({ title: 'Reconnecting', description: 'Your files will be shared as soon as the room reconnects.', variant: 'info' });
     }
     if (files.length > MAX_FILES) {
       toast({ title: 'Too many files', description: `Choose up to ${MAX_FILES} files at a time.`, variant: 'danger' });
@@ -83,7 +84,6 @@ export default function FileUpload({ onUpload, disabled = false }: FileUploadPro
         type="file"
         multiple
         hidden
-        disabled={disabled}
         aria-label="Choose files to share"
         onChange={(event) => {
           handleFiles(event.target.files);
@@ -96,7 +96,7 @@ export default function FileUpload({ onUpload, disabled = false }: FileUploadPro
           <h2 id="upload-title">{isDragging && !disabled ? 'Let go to share your files' : 'Drop files here to share'}</h2>
           <p id="upload-limits">Up to {MAX_FILES} files at a time. {FILE_SIZE_LIMIT_LABEL} per file.</p>
         </div>
-        <Button variant="outline-secondary" onClick={() => fileInputRef.current?.click()} disabled={disabled || registering} aria-describedby="upload-limits" aria-busy={registering}>
+        <Button variant="outline-secondary" onClick={() => fileInputRef.current?.click()} disabled={registering} aria-describedby="upload-limits" aria-busy={registering}>
           <Plus size={17} aria-hidden="true" /> {registering ? 'Adding…' : 'Choose files'}
         </Button>
       </div>

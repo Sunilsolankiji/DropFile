@@ -1,108 +1,41 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# DropFile - development quick start (Linux/macOS)
+# Starts the DropFile server and the Vite dev server. Press Ctrl+C to stop both.
+# Set DROPFILE_SERVER_DIR if the DropFileServer project is not found automatically.
+# For offline sharing on a local network without internet, use ./start-dropfile-lan.sh.
+set -euo pipefail
 
-# DropFile - Quick Start Script for Mac/Linux
+cd "$(dirname "$0")"
 
-echo ""
-echo "╔════════════════════════════════════════════════════════╗"
-echo "║          DropFile - Backend Setup & Start              ║"
-echo "╚════════════════════════════════════════════════════════╝"
-echo ""
-
-# Check if Node.js is installed
-if ! command -v node &> /dev/null; then
-    echo "✗ Node.js is not installed"
-    echo "  Please install from https://nodejs.org/"
-    exit 1
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js is not installed. Install it from https://nodejs.org/"
+  exit 1
 fi
 
-echo "✓ Node.js found:"
-node --version
-echo ""
-
-# Check if npm is installed
-if ! command -v npm &> /dev/null; then
-    echo "✗ npm is not installed"
-    exit 1
-fi
-
-echo "✓ npm found:"
-npm --version
-echo ""
-
-# Install backend dependencies
-echo "╔════════════════════════════════════════════════════════╗"
-echo "║         Installing Backend Dependencies...             ║"
-echo "╚════════════════════════════════════════════════════════╝"
-echo ""
-
-cd server
-
-if [ ! -d "node_modules" ]; then
-    echo "Installing packages..."
-    npm install
-    if [ $? -ne 0 ]; then
-        echo "✗ Failed to install backend dependencies"
-        exit 1
+if [ -z "${DROPFILE_SERVER_DIR:-}" ]; then
+  for candidate in "../DropFileServer" "../../NodeJS Projects/DropFileServer"; do
+    if [ -f "$candidate/package.json" ]; then
+      DROPFILE_SERVER_DIR="$(cd "$candidate" && pwd)"
+      break
     fi
-else
-    echo "✓ Backend dependencies already installed"
+  done
 fi
-echo ""
-
-# Install frontend dependencies
-echo "╔════════════════════════════════════════════════════════╗"
-echo "║         Installing Frontend Dependencies...            ║"
-echo "╚════════════════════════════════════════════════════════╝"
-echo ""
-
-cd ..
-
-if [ ! -d "node_modules" ]; then
-    echo "Installing packages..."
-    npm install
-    if [ $? -ne 0 ]; then
-        echo "✗ Failed to install frontend dependencies"
-        exit 1
-    fi
-else
-    echo "✓ Frontend dependencies already installed"
+if [ -z "${DROPFILE_SERVER_DIR:-}" ]; then
+  echo "Could not find the DropFileServer project. Set DROPFILE_SERVER_DIR to its folder."
+  exit 1
 fi
-echo ""
 
-# Start both servers
-echo "╔════════════════════════════════════════════════════════╗"
-echo "║              Starting Servers...                        ║"
-echo "╚════════════════════════════════════════════════════════╝"
-echo ""
+[ -d node_modules ] || npm install
+[ -d "$DROPFILE_SERVER_DIR/node_modules" ] || (cd "$DROPFILE_SERVER_DIR" && npm install)
 
-# Start backend in background
-(cd server && npm run dev) &
-BACKEND_PID=$!
-
-# Give backend time to start
+(cd "$DROPFILE_SERVER_DIR" && npm run dev) &
+SERVER_PID=$!
+trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
 sleep 2
 
-# Start frontend
-npm run dev &
-FRONTEND_PID=$!
-
 echo ""
-echo "╔════════════════════════════════════════════════════════╗"
-echo "║             Servers Started!                            ║"
-echo "╠════════════════════════════════════════════════════════╣"
-echo "║ Backend:   http://localhost:3001                        ║"
-echo "║ Frontend:  http://localhost:5173                        ║"
-echo "║ Health:    http://localhost:3001/health               ║"
-echo "╠════════════════════════════════════════════════════════╣"
-echo "║ Note: Check the local IP from backend output for       ║"
-echo "║ multi-device testing on your network.                  ║"
-echo "║                                                         ║"
-echo "║ Example: http://192.168.1.100:3001                     ║"
-echo "║                                                         ║"
-echo "║ Press Ctrl+C to stop both servers                      ║"
-echo "╚════════════════════════════════════════════════════════╝"
+echo "Server:   http://localhost:3001"
+echo "Frontend: http://localhost:9002"
+echo "Other devices on your Wi-Fi can open the frontend using this computer's IP address."
 echo ""
-
-# Wait for both processes
-wait $BACKEND_PID $FRONTEND_PID
-
+npm run dev

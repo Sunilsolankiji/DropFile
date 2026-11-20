@@ -125,6 +125,8 @@ h1, h2, h3 { letter-spacing: -0.035em; }
 .start-card h2 { font-size: 1.15rem; font-weight: 650; margin-bottom: 8px; }
 .start-card p { font-size: 0.875rem; color: var(--muted); margin-bottom: 24px; }
 .create-button { width: 100%; justify-content: space-between; min-height: 50px; }
+.nearby-button { margin-top: 10px; justify-content: center; gap: 8px; }
+.start-card p.nearby-hint { margin: 8px 0 0; font-size: 0.75rem; text-align: center; }
 .custom-toggle { margin-top: 8px; padding-inline: 0; font-size: 0.8rem; }
 .custom-toggle:hover { background: transparent; }
 .custom-toggle svg { transition: transform 180ms var(--ease); }

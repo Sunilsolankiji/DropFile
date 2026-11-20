@@ -43,3 +43,6 @@ coverage/
 # Misc
 *.local
 
+
+# Offline LAN build
+dist-lan/

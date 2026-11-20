@@ -197,24 +197,27 @@ test('start/state reject chunk counts, duplicate/out-of-range indexes, and misma
   }
 });
 
-test('acknowledge/cancel are dispatch-only without callback and reject offline dispatch', async t => {
+test('acknowledge waits for server confirmation; cancel is dispatch-only; both reject offline dispatch', async t => {
   const { service, socket } = fixture(t);
   service.files.set('file1', share());
+  socket.respond('ack-transfer-chunk', { success: true });
   await service.acknowledgeChunk('transfer1', 2);
   await service.cancelTransfer('transfer1', 'sender_cancelled');
-  assert.deepEqual(socket.sent[0], {
-    event: 'ack-transfer-chunk', payload: { transferId: 'transfer1', chunkIndex: 2, peerId: 'peer1' }, args: []
-  });
+  assert.deepEqual(socket.sent[0].event, 'ack-transfer-chunk');
+  assert.deepEqual(socket.sent[0].payload, { transferId: 'transfer1', chunkIndex: 2, peerId: 'peer1' });
+  assert.equal(typeof socket.sent[0].args[0], 'function');
   assert.deepEqual(socket.sent[1], {
     event: 'cancel-transfer',
     payload: { roomCode: 'room', transferId: 'transfer1', peerId: 'peer1', reason: 'sender_cancelled' }, args: []
   });
   assert.equal(service.pendingRequests.size, 0);
+  socket.respond('ack-transfer-chunk', { success: false, error: 'Rate limit exceeded' });
+  await assert.rejects(service.acknowledgeChunk('transfer1', 1), /Rate limit exceeded/);
   await assert.rejects(service.acknowledgeChunk('transfer1', 3), /Invalid chunk index/);
   socket.connected = false;
   await assert.rejects(service.acknowledgeChunk('transfer1', 0), /Not connected/);
   await assert.rejects(service.cancelTransfer('transfer1', 'sender_cancelled'), /Not connected/);
-  assert.equal(socket.sent.length, 2);
+  assert.equal(socket.sent.length, 3);
 });
 
 test('transfer pushes forward counts without inventing index sets and completion updates metadata', t => {

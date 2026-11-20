@@ -1,106 +1,40 @@
 @echo off
-REM DropFile - Quick Start Script for Windows
+REM DropFile - development quick start (Windows)
+REM Starts the DropFile server and the Vite dev server in separate windows.
+REM Set DROPFILE_SERVER_DIR if the DropFileServer project is not found automatically.
+REM For offline sharing on a local network without internet, use start-dropfile-lan.bat.
 
-echo.
-echo ╔════════════════════════════════════════════════════════╗
-echo ║          DropFile - Backend Setup & Start              ║
-echo ╚════════════════════════════════════════════════════════╝
-echo.
+setlocal
+cd /d "%~dp0"
 
-REM Check if Node.js is installed
 where node >nul 2>nul
-if %errorlevel% neq 0 (
-    echo ✗ Node.js is not installed or not in PATH
-    echo   Please install Node.js from https://nodejs.org/
+if errorlevel 1 (
+    echo Node.js is not installed or not in PATH. Install it from https://nodejs.org/
     pause
     exit /b 1
 )
 
-echo ✓ Node.js found:
-node --version
-echo.
-
-REM Check if npm is installed
-where npm >nul 2>nul
-if %errorlevel% neq 0 (
-    echo ✗ npm is not installed or not in PATH
+if not defined DROPFILE_SERVER_DIR if exist "%~dp0..\DropFileServer\package.json" set "DROPFILE_SERVER_DIR=%~dp0..\DropFileServer"
+if not defined DROPFILE_SERVER_DIR if exist "%~dp0..\..\NodeJS Projects\DropFileServer\package.json" set "DROPFILE_SERVER_DIR=%~dp0..\..\NodeJS Projects\DropFileServer"
+if not defined DROPFILE_SERVER_DIR (
+    echo Could not find the DropFileServer project. Set DROPFILE_SERVER_DIR to its folder.
     pause
     exit /b 1
 )
 
-echo ✓ npm found:
-npm --version
-echo.
-
-REM Install backend dependencies
-echo ╔════════════════════════════════════════════════════════╗
-echo ║         Installing Backend Dependencies...             ║
-echo ╚════════════════════════════════════════════════════════╝
-echo.
-
-cd server
-if not exist node_modules (
-    echo Installing packages...
+if not exist node_modules call npm install
+if not exist "%DROPFILE_SERVER_DIR%\node_modules" (
+    pushd "%DROPFILE_SERVER_DIR%"
     call npm install
-    if %errorlevel% neq 0 (
-        echo ✗ Failed to install backend dependencies
-        pause
-        exit /b 1
-    )
-) else (
-    echo ✓ Backend dependencies already installed
+    popd
 )
-echo.
 
-REM Install frontend dependencies
-echo ╔════════════════════════════════════════════════════════╗
-echo ║         Installing Frontend Dependencies...            ║
-echo ╚════════════════════════════════════════════════════════╝
-echo.
-
-cd ..
-if not exist node_modules (
-    echo Installing packages...
-    call npm install
-    if %errorlevel% neq 0 (
-        echo ✗ Failed to install frontend dependencies
-        pause
-        exit /b 1
-    )
-) else (
-    echo ✓ Frontend dependencies already installed
-)
-echo.
-
-REM Start both servers
-echo ╔════════════════════════════════════════════════════════╗
-echo ║              Starting Servers...                        ║
-echo ╚════════════════════════════════════════════════════════╝
-echo.
-echo Starting Backend Server...
-echo Starting Frontend Server...
-echo.
-
-REM Open two command windows - one for backend, one for frontend
-start "DropFile Backend Server" cmd /k "cd server && npm run dev"
-timeout /t 2
-
-start "DropFile Frontend Development" cmd /k "npm run dev"
+start "DropFile Server" cmd /k "cd /d ""%DROPFILE_SERVER_DIR%"" && npm run dev"
+timeout /t 2 >nul
+start "DropFile Frontend" cmd /k "cd /d ""%~dp0"" && npm run dev"
 
 echo.
-echo ╔════════════════════════════════════════════════════════╗
-echo ║             Servers Started!                            ║
-echo ╠════════════════════════════════════════════════════════╣
-echo ║ Backend:   http://localhost:3001                        ║
-echo ║ Frontend:  http://localhost:5173                        ║
-echo ║ Health:    http://localhost:3001/health               ║
-echo ╠════════════════════════════════════════════════════════╣
-echo ║ Note: Check the local IP from backend output for       ║
-echo ║ multi-device testing on your network.                  ║
-echo ║                                                         ║
-echo ║ Example: http://192.168.1.100:3001                     ║
-echo ╚════════════════════════════════════════════════════════╝
+echo Server:   http://localhost:3001
+echo Frontend: http://localhost:9002
+echo Other devices on your Wi-Fi can open the frontend using this computer's IP address.
 echo.
-
-pause
-

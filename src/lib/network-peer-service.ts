@@ -92,6 +92,8 @@ export class NetworkPeerService implements TransferClient {
   private onTransferUpdated: (update: TransferUpdate) => void;
   private onTransferCompleted: (update: TransferUpdate) => void;
   private onTransferError: (message: string) => void;
+  private onSignal: (fromPeerId: string, data: unknown) => void;
+  private lifecycleCleanup: (() => void) | null = null;
 
   constructor(
     serverUrl: string,
@@ -110,6 +112,7 @@ export class NetworkPeerService implements TransferClient {
       onTransferUpdated?: (update: TransferUpdate) => void;
       onTransferCompleted?: (update: TransferUpdate) => void;
       onTransferError?: (message: string) => void;
+      onSignal?: (fromPeerId: string, data: unknown) => void;
     },
     peerId?: string
   ) {
@@ -130,6 +133,7 @@ export class NetworkPeerService implements TransferClient {
     this.onTransferUpdated = callbacks.onTransferUpdated || (() => {});
     this.onTransferCompleted = callbacks.onTransferCompleted || (() => {});
     this.onTransferError = callbacks.onTransferError || (() => {});
+    this.onSignal = callbacks.onSignal || (() => {});
   }
 
   private generatePeerId(): string {
@@ -169,8 +173,10 @@ export class NetworkPeerService implements TransferClient {
           forceNew: true,
           reconnection: true,
           reconnectionDelay: 1000,
-          reconnectionDelayMax: 10000,
-          reconnectionAttempts: 15,
+          reconnectionDelayMax: 5000,
+          // Mobile browsers drop sockets whenever the page is backgrounded (file picker, app switch,
+          // screen lock). Keep retrying instead of giving up and stranding the room.
+          reconnectionAttempts: Infinity,
           transports: ['websocket', 'polling']
         });
         this.socket = socket;
@@ -200,11 +206,12 @@ export class NetworkPeerService implements TransferClient {
           this.onConnectionChanged('connecting', `Waking up the backend, this can take up to a minute… (${error.message})`);
         });
 
-        socket.on('disconnect', () => {
+        socket.on('disconnect', (reason) => {
           ++this.connectionGeneration;
           this.cleanup();
-          this.onConnectionChanged('disconnected', 'Connection lost. Reconnecting when possible.');
-          this.settleConnection?.(false);
+          this.onConnectionChanged('connecting', 'Connection lost. Reconnecting…');
+          // Socket.IO does not retry after a server-initiated disconnect; do it ourselves.
+          if (reason === 'io server disconnect' && this.socket === socket) socket.connect();
         });
         socket.io.on('reconnect_attempt', () => {
           this.onConnectionChanged('connecting', 'Waking up the backend, this can take up to a minute…');
@@ -214,12 +221,64 @@ export class NetworkPeerService implements TransferClient {
           this.settleConnection?.(false);
         });
         this.setupEventListeners();
+        this.watchPageLifecycle();
         socket.connect();
       } catch (error) {
         this.onConnectionChanged('disconnected', error instanceof Error ? error.message : 'Connection failed');
         this.settleConnection?.(false);
       }
     });
+  }
+
+  /**
+   * Reconnect immediately when a backgrounded page (mobile file picker, app switch, lock screen)
+   * becomes active again or the network returns, instead of waiting for the next backoff tick.
+   */
+  private watchPageLifecycle(): void {
+    if (typeof window === 'undefined' || this.lifecycleCleanup) return;
+    const resume = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const socket = this.socket;
+      if (socket && !socket.connected) {
+        this.onConnectionChanged('connecting', 'Reconnecting…');
+        socket.connect();
+      }
+    };
+    window.addEventListener('online', resume);
+    window.addEventListener('pageshow', resume);
+    window.addEventListener('focus', resume);
+    document.addEventListener('visibilitychange', resume);
+    this.lifecycleCleanup = () => {
+      window.removeEventListener('online', resume);
+      window.removeEventListener('pageshow', resume);
+      window.removeEventListener('focus', resume);
+      document.removeEventListener('visibilitychange', resume);
+    };
+  }
+
+  /**
+   * Resolve once the room is joined (or after `timeoutMs`). Used to bridge brief reconnects,
+   * e.g. files chosen while the mobile browser was reconnecting after the file picker closed.
+   */
+  waitForConnection(timeoutMs = 20000): Promise<boolean> {
+    if (this.isConnected()) return Promise.resolve(true);
+    if (this.socket && !this.socket.connected) this.socket.connect();
+    return new Promise(resolve => {
+      const started = Date.now();
+      const check = setInterval(() => {
+        if (this.isConnected() || Date.now() - started >= timeoutMs || !this.socket) {
+          clearInterval(check);
+          resolve(this.isConnected());
+        }
+      }, 200);
+    });
+  }
+
+  /**
+   * Send an opaque WebRTC signaling message to another member of this room.
+   */
+  async sendSignal(targetPeerId: string, data: unknown): Promise<void> {
+    await this.request('rtc-signal', { scope: 'room', targetPeerId, data });
   }
 
   private request<Response extends ServerResponse = ServerResponse>(
@@ -381,6 +440,11 @@ export class NetworkPeerService implements TransferClient {
       console.log('text-added received', text);
       this.texts.set(text.id, text);
       this.onTextAdded(text);
+    });
+
+    this.socket.on('rtc-signal', (message: { scope?: string; fromPeerId?: string; data?: unknown }) => {
+      if (message?.scope !== 'room' || typeof message.fromPeerId !== 'string' || message.fromPeerId === this.peerId) return;
+      this.onSignal(message.fromPeerId, message.data);
     });
   }
 
@@ -584,9 +648,8 @@ export class NetworkPeerService implements TransferClient {
     if (!Number.isSafeInteger(chunkIndex) || chunkIndex < 0 ||
         (file && chunkIndex >= file.totalChunks)) throw new Error('Invalid chunk index');
     if (!this.isConnected()) throw new Error('Not connected to the room');
-    this.socket!.emit('ack-transfer-chunk', {
-      transferId, chunkIndex, peerId: this.peerId
-    });
+    // Wait for confirmation: an unconfirmed ACK would leave the chunk in the relay buffer and stall the sender.
+    await this.request('ack-transfer-chunk', { transferId, chunkIndex, peerId: this.peerId });
   }
 
   async cancelTransfer(transferId: string, reason: string): Promise<void> {
@@ -679,6 +742,8 @@ export class NetworkPeerService implements TransferClient {
   disconnect(): void {
     ++this.connectionGeneration;
     this.settleConnection?.(false);
+    this.lifecycleCleanup?.();
+    this.lifecycleCleanup = null;
     if (this.socket) {
       this.socket.removeAllListeners();
       this.socket.io.removeAllListeners();

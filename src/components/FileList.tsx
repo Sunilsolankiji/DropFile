@@ -170,6 +170,9 @@ function FileRow({ file, transfer, now, canDelete, disabled, onDownload, onPause
         </div>
         <div className="file-transfer-status" aria-live="polite">
           <span>{paused ? 'Paused' : needsSource ? 'Pick the original file to keep going' : statusLabel(state, canDelete)}</span>
+          {transfer?.transport === 'direct' && !terminal && (
+            <span className="transport-badge" title="Sent straight between the two devices, not through the server">Direct · same network</span>
+          )}
           {canDelete && !terminal && activeReceivers > 0 && (
             <span>{activeReceivers} {activeReceivers === 1 ? 'person' : 'people'} downloading</span>
           )}
@@ -201,7 +204,7 @@ function FileRow({ file, transfer, now, canDelete, disabled, onDownload, onPause
         >
           {busy ? <Spinner animation="border" size="sm" aria-hidden="true" /> : <Download size={17} aria-hidden="true" />}
         </Button>}
-        {active && <Button variant="outline-secondary" className="icon-button" onClick={() => onPause(transfer.transferId)} aria-label={`Pause ${file.name}`} title="Pause transfer"><Pause size={17} aria-hidden="true" /></Button>}
+        {active && transfer.canPause !== false && <Button variant="outline-secondary" className="icon-button" onClick={() => onPause(transfer.transferId)} aria-label={`Pause ${file.name}`} title="Pause transfer"><Pause size={17} aria-hidden="true" /></Button>}
         {resumable && <Button variant="outline-secondary" className="icon-button" disabled={disabled || busy} onClick={() => void run(() => onResume(transfer.transferId))} aria-label={`Resume ${file.name}`} title="Resume transfer"><Play size={17} aria-hidden="true" /></Button>}
         {needsSource && transfer && <>
           <input

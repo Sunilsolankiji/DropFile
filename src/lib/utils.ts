@@ -35,3 +35,30 @@ export function formatFileSize(bytes: number, decimals = 2): string {
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
+
+/** Hand a received file to the browser's download manager. */
+export function saveBlobAsFile(name: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+}
+
+export type DeviceType = 'desktop' | 'laptop' | 'phone' | 'tablet' | 'unknown';
+
+/** Best-effort device category for the nearby devices list. */
+export function detectDeviceType(): DeviceType {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const agent = navigator.userAgent;
+  if (/iPad|Tablet|PlayBook|Silk/i.test(agent) || (/Macintosh/.test(agent) && navigator.maxTouchPoints > 1)) return 'tablet';
+  if (/Android/i.test(agent)) return /Mobile/i.test(agent) ? 'phone' : 'tablet';
+  if (/iPhone|iPod|Mobile|Windows Phone/i.test(agent)) return 'phone';
+  return 'desktop';
+}

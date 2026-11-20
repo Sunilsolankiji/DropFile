@@ -10,6 +10,9 @@ A React + Vite application for file sharing via access codes. Socket.IO manages 
 - **Join Rooms**: Enter an access code to join an existing file sharing room
 - **Drag & Drop Upload**: Drop files or use the keyboard-accessible file picker (up to 10 files at a time, 2 GB per file)
 - **Cross-Device Sharing**: Share files between any devices connected to the same backend
+- **Direct Wi-Fi transfers**: In a room, downloads go straight from the sender's device over WebRTC when both devices can reach each other, falling back to the server relay automatically
+- **Nearby devices**: Open *Share with nearby devices* on two devices on the same Wi-Fi; they discover each other without a code and send files directly after the receiver accepts
+- **Offline local network mode**: Run DropFile entirely on your own computer, no internet needed (see below)
 - **Resumable Transfers**: Chunk progress, pause/resume, cancellation, and durable receiver storage
 - **Real-time Updates**: Files sync instantly across all connected clients via Socket.IO
 - **Auto-expiry**: Files automatically expire after a set period
@@ -60,7 +63,8 @@ A React + Vite application for file sharing via access codes. Socket.IO manages 
 
 ### Quick Start (Windows)
 
-Double-click `start-dropfile.bat` to start the development server.
+Double-click `start-dropfile.bat` to start the server and development frontend.
+The scripts look for the server project in `..\DropFileServer` (or set `DROPFILE_SERVER_DIR`).
 
 ### Quick Start (Linux/Mac)
 
@@ -68,6 +72,20 @@ Double-click `start-dropfile.bat` to start the development server.
 chmod +x start-dropfile.sh
 ./start-dropfile.sh
 ```
+
+### Offline local network mode (no internet)
+
+One computer runs DropFile; phones and computers on the same Wi-Fi open it in a browser.
+
+```bash
+./start-dropfile-lan.sh      # or start-dropfile-lan.bat on Windows
+```
+
+This runs `npm run build:lan` (same-origin build in `dist-lan/`) and starts the server with `npm run lan`
+and `WEB_DIST_DIR` pointing at the build. The terminal prints the Wi-Fi URL and a QR code to scan.
+The server also answers STUN on UDP 3478 so direct transfers connect without internet.
+Allow Node.js through the firewall for private networks if other devices cannot connect.
+Guest/public Wi-Fi with client isolation blocks device-to-device traffic; rooms then use the server relay.
 
 ## 🔧 How It Works
 
@@ -82,6 +100,13 @@ Raw file chunks use HTTP POST/GET with the device's `x-peer-id` header; no whole
 │  (Browser)  │                   │   (Node.js)     │                   │  (Browser)  │
 └─────────────┘                   └─────────────────┘                   └─────────────┘
 ```
+
+### Direct transfers (WebRTC)
+
+When you download in a room and the sender is online, DropFile first opens a WebRTC data channel to the
+sender (the server only relays the handshake via `rtc-signal`). If it cannot connect within a few seconds,
+or the browser lacks WebRTC, the download uses the chunk relay below. Direct transfers show a
+"Direct · same network" badge; they cannot be paused, only cancelled. ICE servers come from `GET /api/rtc-config`.
 
 ### File Sharing Flow
 
@@ -146,6 +171,7 @@ Works across:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `VITE_API_URL` | Render backend base URL (Socket.IO, REST, chunk transfers) | `http://localhost:3001` (dev only) |
+| `VITE_LAN_MODE` | `true` for the offline LAN build (set by `.env.lan`); uses the page origin as the API URL | unset |
 
 ## 📁 Project Structure
 
@@ -183,6 +209,7 @@ DropFile/
 |---------|-------------|
 | `npm run dev` | Start development server on port 9002 |
 | `npm run build` | Build for production |
+| `npm run build:lan` | Build the offline local-network bundle into `dist-lan/` |
 | `npm run preview` | Preview production build |
 | `npm run lint` | Run ESLint |
 | `npm run typecheck` | Run TypeScript type checking |
